@@ -3154,8 +3154,6 @@ bool Actor::GetSavingThrow(ieDword type, int modifier, const Effect *fx)
 	static int saveDiceSides = gamedata->GetMiscRule("SAVING_THROW_DICE_SIDES");
 	InternalFlags|=IF_USEDSAVE;
 	int ret = lastSave.savingThrow[type];
-	// NOTE: assuming criticals apply to iwd2 too
-	if (ret == 1) return false;
 	if (ret == saveDiceSides) return true;
 	if (Modified[IE_STATE_ID] & STATE_DEAD) return false; // just to shut some errant feedback, should be fine
 	const Effect* sfx = fxqueue.HasEffect(fx_save_vs_school_bonus_ref);
@@ -3183,7 +3181,7 @@ bool Actor::GetSavingThrow(ieDword type, int modifier, const Effect *fx)
 		}
 		lastSave.prevType = type;
 		lastSave.prevRoll = ret;
-		return ret > (int) GetStat(savingThrows[type]);
+		return ret >= (int) GetStat(savingThrows[type]);
 	}
 
 	int roll = ret;
@@ -3262,7 +3260,7 @@ bool Actor::GetSavingThrow(ieDword type, int modifier, const Effect *fx)
 
 	ret = AdjustSaveVsSchool(ret, fx->PrimaryType, sfx);
 
-	if (ret > saveDC) {
+	if (ret >= saveDC) {
 		// ~Saving throw result: (d20 + save + bonuses) %d + %d  + %d vs. (10 + spellLevel + saveMod)  10 + %d + %d - Success!~
 		displaymsg->DisplayRollStringName(ieStrRef::ROLL22, GUIColors::LIGHTGREY, this, roll, save, modifier, spellLevel, saveBonus);
 		return true;
