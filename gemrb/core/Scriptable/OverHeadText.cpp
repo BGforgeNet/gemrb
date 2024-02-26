@@ -93,7 +93,12 @@ int OverHeadText::GetHeightOffset() const
 {
 	int offset = 100;
 	if (owner->Type == ST_ACTOR) {
-		offset = static_cast<const Selectable*>(owner)->circleSize * 50;
+		// PST foot circle size is smaller compared to other games.
+		int offsetMult = 35;
+		if (core->HasFeature(GFFlags::PST_STATE_FLAGS) != 0) { // if PST
+			offsetMult = 50;
+		}
+		offset = static_cast<const Selectable*>(owner)->circleSize * offsetMult;
 	}
 
 	return offset;
