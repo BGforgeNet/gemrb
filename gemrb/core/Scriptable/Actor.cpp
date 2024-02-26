@@ -3159,29 +3159,67 @@ bool Actor::GetSavingThrow(ieDword type, int modifier, const Effect *fx)
 	const Effect* sfx = fxqueue.HasEffect(fx_save_vs_school_bonus_ref);
 
 	if (!third) {
-		ret += modifier + GetStat(IE_LUCK);
+		bool extraFeedback = false;
+		if (core->config.GUIEnhancements & 1024) {
+			extraFeedback = true;
+		}
+		String msgEmpty = fmt::format(u"");
+		String msgLuck = msgEmpty;
+		String msgFxSchool = msgEmpty;
+		String msgNumCurses = msgEmpty;
+		String msgResult = msgEmpty;
+
+		int modLuck = GetStat(IE_LUCK);
+		if (extraFeedback && (modLuck != 0)) {
+			msgLuck = fmt::format(u" + Luck {}", modLuck);
+		}
 
 		// also take any "vs school" bonus into account
+		int modFxSchool = 0;
 		if (fx && sfx) {
-			ret = AdjustSaveVsSchool(ret, fx->PrimaryType, sfx);
+			modFxSchool = AdjustSaveVsSchool(ret, fx->PrimaryType, sfx) - ret;
+			if (extraFeedback && (modFxSchool != 0)) {
+				msgFxSchool = fmt::format(u" + FxVsSchool {}", modFxSchool);
+			}
 		}
 
 		// pst litany of curses has a bonus depending on number of curses known
 		// due to a bug, it was a malus in the original
+		int modNumCurses = 0;
 		if (pstflags && fx && fx->SourceRef == "spin101" && fx->Opcode != 45) {
-			ret -= CheckVariable(nullptr, "Morte_Taunt", "GLOBAL");
+			modNumCurses = CheckVariable(nullptr, "Morte_Taunt", "GLOBAL");
+			if (extraFeedback) {
+				msgNumCurses = fmt::format(u" - NumCurses {}", modNumCurses);
+			}
+		}
+
+		int threshold = (int) GetStat(savingThrows[type]);
+		bool saved = false;
+		if (extraFeedback) {
+			msgResult = fmt::format(u" < {}: Fail", threshold);
+		}
+		int result = ret + modifier + modLuck + modFxSchool - modNumCurses;
+		if (result >= threshold) {
+			saved = true;
+			if (extraFeedback) {
+				msgResult = fmt::format(u" >= {}: Success", threshold);
+			}
 		}
 
 		// potentially display feedback, but do some rate limiting, since each effect in a spell ends up here
 		if (core->HasFeedback(FT_COMBAT) && (lastSave.prevType != type || lastSave.prevRoll != ret)) {
 			// "Save Vs Death" in all games except pst: "Save Vs. Death:"
 			String msg = core->GetString(DisplayMessage::GetStringReference(HCStrings(ieDword(HCStrings::SaveSpell) + type)));
-			msg += fmt::format(u" {}", ret);
+			if (extraFeedback) {
+				msg += fmt::format(u" {} + Mod {}{}{}{} = {}{}", ret, modifier, msgLuck, msgFxSchool, msgNumCurses, result, msgResult);
+			} else {
+				msg += fmt::format(u" {}", ret);
+			}
 			displaymsg->DisplayStringName(std::move(msg), GUIColors::WHITE, this);
 		}
 		lastSave.prevType = type;
 		lastSave.prevRoll = ret;
-		return ret >= (int) GetStat(savingThrows[type]);
+		return saved;
 	}
 
 	int roll = ret;
