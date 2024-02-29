@@ -10,7 +10,7 @@ on:
 jobs:
   macos:
     name: MacOS build
-    runs-on: macos-13
+    runs-on: macos-latest
 
     steps:
     - name: Checkout
@@ -19,7 +19,6 @@ jobs:
     - name: Set up Homebrew
       run: |
         brew install sdl2 openal-soft sdl2_mixer libpng libvorbis sccache googletest
-        brew reinstall libpng
 
     - name: Set up build
       run: |
