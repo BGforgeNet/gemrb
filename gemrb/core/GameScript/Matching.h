@@ -21,12 +21,19 @@
 #define MATCHING_H
 
 #include "GameScript/GameScript.h"
+#include "GameScript/Targets.h"
 
 #include "exports.h"
 
 namespace GemRB {
 
 class TileMap;
+
+enum class GroupType {
+	Enemy,
+	PC,
+	Neutral, // has no enemies
+};
 
 GEM_EXPORT Targets *GetAllObjects(const Map *map, Scriptable *Sender, const Object *oC, int ga_flags);
 Targets* GetAllActors(Scriptable* Sender, int ga_flags);

@@ -65,15 +65,15 @@ Store::~Store(void)
 	}
 }
 
-bool Store::IsItemAvailable(unsigned int slot) const
+bool Store::IsItemAvailable(const STOItem* item) const
 {
-	const Game *game = core->GetGame();
+	// integer values are handled in the importer, here we actually check any set conditions
 	//0     - not infinite, not conditional
 	//-1    - infinite
 	//other - pst trigger ref
-
-	const Condition *triggers = items[slot]->triggers;
+	const Condition* triggers = item->triggers;
 	if (triggers) {
+		const Game* game = core->GetGame();
 		Scriptable *shopper = game->GetSelectedPCSingle(false);
 		return triggers->Evaluate(shopper) != 0;
 	}
@@ -82,12 +82,12 @@ bool Store::IsItemAvailable(unsigned int slot) const
 
 int Store::GetRealStockSize() const
 {
-	int count=ItemsCount;
+	int count = items.size();
 	if (!HasTriggers) {
 		return count;
 	}
-	for (unsigned int i=0;i<ItemsCount;i++) {
-		if (!IsItemAvailable(i) ) {
+	for (const STOItem* item : items) {
+		if (!IsItemAvailable(item)) {
 			count--;
 		}
 	}
@@ -124,13 +124,20 @@ int Store::AcceptableItemType(ieDword type, ieDword invflags, bool pc) const
 
 	if (pc && Type < StoreType::BG2CONT) {
 		//don't allow selling of non destructible items
-		if (!(invflags&IE_INV_ITEM_DESTRUCTIBLE )) {
+		if (!(invflags & IE_INV_ITEM_DESTRUCTIBLE)) {
 			ret &= ~IE_STORE_SELL;
 		}
 
 		//don't allow selling of critical items (they could still be put in bags) ... unless the shop is special
-		if ((invflags&IE_INV_ITEM_CRITICAL) && !(Flags&IE_STORE_BUYCRITS)) {
+		bool critical = invflags & IE_INV_ITEM_CRITICAL;
+		if (critical && !(Flags & IE_STORE_BUYCRITS)) {
 			ret &= ~IE_STORE_SELL;
+		}
+
+		// ... however some games determine sellability differently
+		bool sellable = critical && !(invflags & IE_INV_ITEM_CONVERSABLE);
+		if (sellable && core->HasFeature(GFFlags::SELLABLE_CRITS_NO_CONV)) {
+			ret |= IE_STORE_SELL;
 		}
 
 		//check if store buys stolen items
@@ -179,10 +186,10 @@ STOItem *Store::GetItem(unsigned int idx, bool usetrigger) const
 		return items[idx];
 	}
 
-	for (unsigned int i=0;i<ItemsCount;i++) {
-		if (IsItemAvailable(i)) {
+	for (STOItem* item : items) {
+		if (IsItemAvailable(item)) {
 			if (!idx) {
-				return items[i];
+				return item;
 			}
 			idx--;
 		}
@@ -192,13 +199,14 @@ STOItem *Store::GetItem(unsigned int idx, bool usetrigger) const
 
 unsigned int Store::FindItem(const ResRef &itemname, bool usetrigger) const
 {
-	for (unsigned int i=0;i<ItemsCount;i++) {
+	unsigned int count = items.size();
+	for (unsigned int i = 0; i < count; i++) {
+		const STOItem* temp = items[i];
 		if (usetrigger) {
-			if (!IsItemAvailable(i) ) {
+			if (!IsItemAvailable(temp)) {
 				continue;
 			}
 		}
-		const STOItem *temp = items[i];
 		if (itemname == temp->ItemResRef) {
 			return i;
 		}
@@ -208,11 +216,10 @@ unsigned int Store::FindItem(const ResRef &itemname, bool usetrigger) const
 
 STOItem *Store::FindItem(const CREItem *item, bool exact) const
 {
-	for (unsigned int i=0;i<ItemsCount;i++) {
-		if (!IsItemAvailable(i) ) {
+	for (STOItem* temp : items) {
+		if (!IsItemAvailable(temp)) {
 			continue;
 		}
-		STOItem *temp = items[i];
 
 		if (item->ItemResRef != temp->ItemResRef) {
 			continue;
@@ -235,8 +242,7 @@ STOItem *Store::FindItem(const CREItem *item, bool exact) const
 unsigned int Store::CountItems(const ResRef& itemRef) const
 {
 	unsigned int count = 0;
-	for (unsigned int i = 0; i < ItemsCount; i++) {
-		const STOItem* storeItem = items[i];
+	for (const STOItem* storeItem : items) {
 		if (itemRef == storeItem->ItemResRef) {
 			count += storeItem->AmountInStock;
 		}
@@ -334,7 +340,6 @@ void Store::AddItem(CREItem *item)
 		temp->Usages[0] = 1;
 	}
 	items.push_back (temp );
-	ItemsCount++;
 }
 
 void Store::RemoveItem(const STOItem *itm)
@@ -343,7 +348,6 @@ void Store::RemoveItem(const STOItem *itm)
 	while(i--) {
 		if (items[i]==itm) {
 			items.erase(items.begin()+i);
-			ItemsCount--;
 			break;
 		}
 	}

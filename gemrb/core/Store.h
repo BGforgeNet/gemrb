@@ -145,8 +145,7 @@ public:
 	ieDword PurchasedCategoriesOffset = 0;
 	ieDword PurchasedCategoriesCount = 0;
 	ieDword ItemsOffset = 0;
-	//don't use this value directly, use GetRealStockSize
-	ieDword ItemsCount = 0;
+	// use GetRealStockSize to get the item count
 	ieDword Lore = 0;
 	ieDword IDPrice = 0;
 	ResRef RumoursTavern;
@@ -192,7 +191,7 @@ public: //queries
 private:
 	/** Finds a mergeable item in the stock, if exact is set, it checks for usage counts too */
 	STOItem *FindItem(const CREItem *item, bool exact) const;
-	bool IsItemAvailable(unsigned int slot) const;
+	bool IsItemAvailable(const STOItem* item) const;
 };
 
 }

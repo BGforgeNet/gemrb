@@ -24,6 +24,7 @@
 #include "Geometry.h"
 #include "RNG.h"
 
+#include <cmath>
 #include <cstdint>
 
 namespace GemRB {
@@ -108,24 +109,19 @@ inline orient_t PrevOrientation(orient_t orient, int step = 1)
 }
 
 /** Calculates the orientation of a character (or projectile) facing a point */
-inline orient_t GetOrient(const Point &s, const Point &d)
+inline orient_t GetOrient(const Point& from, const Point& to)
 {
-	static const orient_t orientations[25]={
-		NW, NNW, N, NNE, NE,
-		WNW, NW, N, NE, ENE,
-		W, W, S, E, E,
-		WSW, SW, S, SE, ESE,
-		SW, SSW, S, SSE, SE
-	};
+	int deltaX = to.x - from.x;
+	int deltaY = to.y - from.y;
+	if (!deltaX) return deltaY >= 0 ? S : N;
 
-	int deltaX = s.x - d.x;
-	int deltaY = s.y - d.y;
-	int div = Distance(s,d);
-	if(!div) return S;
-	if(div>3) div/=2;
-	int aX=deltaX/div;
-	int aY=deltaY/div;
-	return orientations[(aY+2)*5+aX+2];
+	// reverse Y to match our game coordinate system
+	float_t angle = AngleFromPoints(-deltaY, deltaX);
+
+	// calculate which segment the angle falls into and which orientation that represents
+	constexpr float_t M_PI_8 = M_PI / 8;
+	float_t segment = std::fmod(angle + M_PI_8 / 2 + 2 * M_PI, 2.0F * M_PI);
+	return PrevOrientation(E, int(segment / M_PI_8));
 }
 
 inline Point OrientedOffset(orient_t face, int offset)

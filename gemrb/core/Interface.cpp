@@ -319,17 +319,6 @@ Interface::Interface(CoreSettings&& cfg)
 		}
 	}
 
-	// most of the old gemrb override files can be found here,
-	// so they have a lower priority than the game files and can more easily be modded
-	path = PathJoin(config.GemRBUnhardcodedPath, "unhardcoded", config.GameType);
-	if (config.GameType == "auto") {
-		gamedata->AddSource(path, "GemRB Unhardcoded data", PLUGIN_RESOURCE_NULL);
-	} else {
-		gamedata->AddSource(path, "GemRB Unhardcoded data", PLUGIN_RESOURCE_CACHEDDIRECTORY);
-	}
-	path = PathJoin(config.GemRBUnhardcodedPath, "unhardcoded", "shared");
-	gamedata->AddSource(path, "shared GemRB Unhardcoded data", PLUGIN_RESOURCE_CACHEDDIRECTORY);
-
 	Log(MESSAGE, "Core", "Initializing KEY Importer...");
 	path_t ChitinPath = PathJoin(config.GamePath, "chitin.key");
 	if (!gamedata->AddSource(ChitinPath, "chitin.key", PLUGIN_RESOURCE_KEY)) {
@@ -340,6 +329,17 @@ Interface::Interface(CoreSettings&& cfg)
 - or the game is running (Windows only).");
 		throw CIE("The path must point to a game directory with a readable chitin.key file.");
 	}
+
+	// most of the old gemrb override files can be found here,
+	// so they have a lower priority than the game files and can more easily be modded
+	path = PathJoin(config.GemRBUnhardcodedPath, "unhardcoded", config.GameType);
+	if (config.GameType == "auto") {
+		gamedata->AddSource(path, "GemRB Unhardcoded data", PLUGIN_RESOURCE_NULL);
+	} else {
+		gamedata->AddSource(path, "GemRB Unhardcoded data", PLUGIN_RESOURCE_CACHEDDIRECTORY);
+	}
+	path = PathJoin(config.GemRBUnhardcodedPath, "unhardcoded", "shared");
+	gamedata->AddSource(path, "shared GemRB Unhardcoded data", PLUGIN_RESOURCE_CACHEDDIRECTORY);
 
 	fogRenderer = std::make_unique<FogRenderer>(config.SpriteFoW);
 
@@ -614,24 +614,14 @@ Interface::~Interface() noexcept
 	delete calendar;
 	delete worldmap;
 	delete keymap;
-
-	// fonts need to be destroyed before TTF plugin
-	PluginMgr::Get()->RunCleanup();
-
-	slotTypes.clear();
-	itemtypedata.clear();
-
 	delete sgiterator;
-
-	DamageInfoMap.clear();
-
 	delete projserv;
-
 	delete displaymsg;
 	delete TooltipBG;
 
+	// delete and nullify this global data as well
 	delete gamedata;
-	gamedata = NULL;
+	gamedata = nullptr;
 
 	// Removing all stuff from Cache, except bifs
 	if (!config.KeepCache) DelTree(config.CachePath, true);
@@ -902,10 +892,13 @@ bool Interface::ReadSoundChannelsTable() const
 		// translate some alternative names for the IWDs
 		if (rowname == "ACTION") rowname = "ACTIONS";
 		else if (rowname == "SWING") rowname = "SWINGS";
-		AudioDriver->SetChannelVolume(rowname, tm->QueryFieldSigned<int>(i, ivol));
+
+		int volume = tm->QueryFieldSigned<int>(i, ivol);
+		float reverb = 0.0f;
 		if (irev != TableMgr::npos) {
-			AudioDriver->SetChannelReverb(rowname, atof(tm->QueryField(i, irev).c_str()));
+			reverb = atof(tm->QueryField(i, irev).c_str());
 		}
+		AudioDriver->UpdateChannel(rowname, i, volume, reverb);
 	}
 	return true;
 }
@@ -1378,6 +1371,9 @@ static const EnumArray<GFFlags, StringView> game_flags {
 	"DamageInnocentRep", // GFFlags::DAMAGE_INNOCENT_REP
 	"HasWeaponSets", // GFFlags::GF_HAS_WEAPON_SETS
 	"HighlightOutlineOnly", // GFFlags::HIGHLIGHT_OUTLINE_ONLY
+	"IWDRestSpawns", // GFFlags::IWD_REST_SPAWNS
+	"HasContinuation", // GFFlags::HAS_CONTINUATION
+	"SellableCritsNoConv", // GFFlags::SELLABLE_CRITS_NO_CONV
 };
 
 /** Loads gemrb.ini */
@@ -2075,7 +2071,7 @@ int Interface::PlayMovie(const ResRef& movieRef)
 
 	Holder<SoundHandle> sound_override;
 	if (!sound_resref.empty()) {
-		sound_override = AudioDriver->Play(sound_resref, SFX_CHAN_NARRATOR);
+		sound_override = AudioDriver->Play(sound_resref, SFXChannel::Narrator);
 	}
 
 	// clear whatever is currently on screen
@@ -3393,12 +3389,12 @@ ieStrRef Interface::GetRumour(const ResRef& dlgref)
 }
 
 //plays stock sound listed in defsound.2da
-Holder<SoundHandle> Interface::PlaySound(size_t index, unsigned int channel) const
+Holder<SoundHandle> Interface::PlaySound(size_t index, SFXChannel channel) const
 {
 	return PlaySound(index, channel, Point(), 0);
 }
 
-Holder<SoundHandle> Interface::PlaySound(size_t index, unsigned int channel, const Point& p, unsigned int flags) const
+Holder<SoundHandle> Interface::PlaySound(size_t index, SFXChannel channel, const Point& p, unsigned int flags) const
 {
 	if (index <= gamedata->defaultSounds.size()) {
 		return AudioDriver->Play(gamedata->defaultSounds[index], channel, p, flags);
@@ -3838,8 +3834,7 @@ int Interface::GetLoreBonus(int column, int value) const
 	//no lorebon in iwd2 - lore is a skill
 	if (HasFeature(GFFlags::RULES_3ED)) return 0;
 
-	if (column<0 || column>0)
-		return -9999;
+	if (column != 0) return -9999;
 
 	return abilityTables->lorebon[value];
 }
@@ -3849,8 +3844,7 @@ int Interface::GetWisdomBonus(int column, int value) const
 	if (abilityTables->wisbon.empty()) return 0;
 
 	// xp bonus
-	if (column<0 || column>0)
-		return -9999;
+	if (column != 0) return -9999;
 
 	return abilityTables->wisbon[value];
 }

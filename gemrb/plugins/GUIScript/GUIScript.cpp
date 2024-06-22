@@ -2724,8 +2724,6 @@ static PyObject* GemRB_AddNewArea(PyObject * /*self*/, PyObject* args)
 
 	ResRef enc[5];
 	int k;
-	EnumArray<WMPDirection, ieDword> links;
-	EnumArray<WMPDirection, ieDword> indices;
 	TableMgr::index_t rows = newarea->GetRowCount();
 	for (TableMgr::index_t i = 0; i < rows; ++i) {
 		const ResRef area  = newarea->QueryField(i,0);
@@ -2737,6 +2735,7 @@ static PyObject* GemRB_AddNewArea(PyObject * /*self*/, PyObject* args)
 		int label          = newarea->QueryFieldSigned<int>(i,6);
 		int name           = newarea->QueryFieldSigned<int>(i,7);
 		ResRef ltab   = newarea->QueryField(i, 8);
+		EnumArray<WMPDirection, ieDword> links;
 		links[WMPDirection::NORTH] = newarea->QueryFieldUnsigned<ieDword>(i, 9);
 		links[WMPDirection::EAST] = newarea->QueryFieldUnsigned<ieDword>(i, 10);
 		links[WMPDirection::SOUTH] = newarea->QueryFieldUnsigned<ieDword>(i, 11);
@@ -2746,6 +2745,7 @@ static PyObject* GemRB_AddNewArea(PyObject * /*self*/, PyObject* args)
 
 		unsigned int local = 0;
 		int linkcnt = wmap->GetLinkCount();
+		EnumArray<WMPDirection, ieDword> indices;
 		for (WMPDirection dir : EnumIterator<WMPDirection>()) {
 			indices[dir] = linkcnt;
 			linkcnt += links[dir];
@@ -3765,7 +3765,6 @@ static PyObject* GemRB_VerbalConstant(PyObject * /*self*/, PyObject* args)
 {
 	int globalID;
 	Verbal str;
-	unsigned int channel;
 
 	if (!PyArg_ParseTuple(args, "iI", &globalID, &str)) {
 		return AttributeError( GemRB_VerbalConstant__doc );
@@ -3780,7 +3779,7 @@ static PyObject* GemRB_VerbalConstant(PyObject * /*self*/, PyObject* args)
 
 	//get soundset based string constant
 	std::string sound = fmt::format("{}{}{}{:02d}", fmt::WideToChar{actor->PCStats->SoundFolder}, PathDelimiter, actor->PCStats->SoundSet, str);
-	channel = actor->InParty ? SFX_CHAN_CHAR0 + actor->InParty - 1 : SFX_CHAN_DIALOG;
+	SFXChannel channel = actor->InParty ? SFXChannel(ieByte(SFXChannel::Char0) + actor->InParty - 1) : SFXChannel::Dialog;
 	core->GetAudioDrv()->Play(sound, channel, Point(), GEM_SND_SPEECH | GEM_SND_EFX);
 	Py_RETURN_NONE;
 }
@@ -3815,7 +3814,7 @@ static PyObject* GemRB_PlaySound(PyObject * /*self*/, PyObject* args)
 	char *channel_name = NULL;
 	Point pos;
 	unsigned int flags = 0;
-	unsigned int channel = SFX_CHAN_GUI;
+	SFXChannel channel = SFXChannel::GUI;
 	int index;
 
 	if (PyArg_ParseTuple( args, "i|z", &index, &channel_name) ) {
@@ -5166,7 +5165,7 @@ static PyObject* GemRB_SetJournalEntry(PyObject * /*self*/, PyObject * args)
 		if (chapter == ieDword(-1)) {
 			chapter = game->GetGlobal("CHAPTER", -1);
 		}
-		game->AddJournalEntry(strref, (ieByte) section, (ieByte) chapter, msg2);
+		game->AddJournalEntry(strref, (JournalSection) section, (ieByte) chapter, msg2);
 	}
 
 	Py_RETURN_NONE;
@@ -5734,7 +5733,7 @@ static PyObject* GemRB_GetPCStats(PyObject * /*self*/, PyObject* args)
 	PARSE_ARGS( args,  "i", &PartyID );
 	GET_GAME();
 
-	Actor* MyActor = game->FindPC( PartyID );
+	const Actor* MyActor = game->FindPC(PartyID);
 	if (!MyActor || !MyActor->PCStats) {
 		Py_RETURN_NONE;
 	}
@@ -6356,8 +6355,6 @@ static PyObject* GemRB_FillPlayerInfo(PyObject * /*self*/, PyObject* args)
 		newstats.AwayTime = oldstats.AwayTime;
 		newstats.unknown10 = oldstats.unknown10;
 		newstats.Happiness = oldstats.Happiness;
-		newstats.LastLeft = oldstats.LastLeft;
-		newstats.LastJoined = oldstats.LastJoined;
 		newstats.SoundFolder = oldstats.SoundFolder;
 		newstats.States = oldstats.States;
 		
@@ -7008,7 +7005,7 @@ static PyObject* GemRB_ChangeContainerItem(PyObject * /*self*/, PyObject* args)
 	}
 
 	if (Sound && Sound[0]) {
-		core->GetAudioDrv()->Play(Sound, SFX_CHAN_GUI);
+		core->GetAudioDrv()->Play(Sound, SFXChannel::GUI);
 	}
 	Py_RETURN_NONE;
 }
@@ -7456,7 +7453,7 @@ static PyObject* GemRB_ChangeStoreItem(PyObject * /*self*/, PyObject* args)
 		OverrideSound(itemResRef, SoundItem, IS_DROP);
 		if (!SoundItem.IsEmpty()) {
 			// speech means we'll only play the last sound if multiple items were bought
-			core->GetAudioDrv()->Play(SoundItem, SFX_CHAN_GUI, Point(), GEM_SND_SPEECH);
+			core->GetAudioDrv()->Play(SoundItem, SFXChannel::GUI, Point(), GEM_SND_SPEECH);
 		}
 		res = ASI_SUCCESS;
 		break;
@@ -7879,40 +7876,26 @@ static PyObject* GemRB_EvaluateString(PyObject * /*self*/, PyObject* args)
 	Py_RETURN_NONE;
 }
 
-PyDoc_STRVAR( GemRB_UpdateMusicVolume__doc,
-"===== UpdateMusicVolume =====\n\
+PyDoc_STRVAR(GemRB_UpdateVolume__doc,
+"===== UpdateVolume =====\n\
 \n\
-**Prototype:** GemRB.UpdateMusicVolume ()\n\
+**Prototype:** GemRB.UpdateVolume ([type])\n\
 \n\
-**Description:** Updates music volume on-the-fly.\n\
+**Description:** Updates volume on-the-fly.\n\
 \n\
-**Return value:** N/A\n\
+**Parameters**:\n\
+  * type:\n\
+    * 1 - music\n\
+    * 2 - ambients\n\
+    * 3 - both, default\n\
 \n\
-**See also:** [UpdateAmbientsVolume](UpdateAmbientsVolume.md)"
-);
+**Return value:** N/A");
 
-static PyObject* GemRB_UpdateMusicVolume(PyObject * /*self*/, PyObject* /*args*/)
+static PyObject* GemRB_UpdateVolume(PyObject* /*self*/, PyObject* args)
 {
-	core->GetAudioDrv()->UpdateVolume( GEM_SND_VOL_MUSIC );
-
-	Py_RETURN_NONE;
-}
-
-PyDoc_STRVAR( GemRB_UpdateAmbientsVolume__doc,
-"===== UpdateAmbientsVolume =====\n\
-\n\
-**Prototype:** GemRB.UpdateAmbientsVolume ()\n\
-\n\
-**Description:** Updates ambients volume on-the-fly.\n\
-\n\
-**Return value:** N/A\n\
-\n\
-**See also:** [UpdateMusicVolume](UpdateMusicVolume.md)"
-);
-
-static PyObject* GemRB_UpdateAmbientsVolume(PyObject * /*self*/, PyObject* /*args*/)
-{
-	core->GetAudioDrv()->UpdateVolume( GEM_SND_VOL_AMBIENTS );
+	int type = 3;
+	PARSE_ARGS(args, "i", &type);
+	core->GetAudioDrv()->UpdateVolume(type);
 
 	Py_RETURN_NONE;
 }
@@ -7925,6 +7908,7 @@ static PyObject* GemRB_ConsoleWindowLog(PyObject * /*self*/, PyObject* args)
 {
 	LogLevel logLevel;
 	PARSE_ARGS(args, "b", &logLevel);
+	if (logLevel >= LogLevel::count) logLevel = LogLevel::DEBUG;
 
 	SetConsoleWindowLogLevel(logLevel);
 	Py_RETURN_NONE;
@@ -9279,7 +9263,7 @@ static PyObject* GemRB_DragItem(PyObject * /*self*/, PyObject* args)
 
 	OverrideSound(si->ItemResRef, Sound, IS_GET);
 	if (!Sound.IsEmpty()) {
-		core->GetAudioDrv()->Play(Sound, SFX_CHAN_GUI);
+		core->GetAudioDrv()->Play(Sound, SFXChannel::GUI);
 	}
 
 	//if res is positive, it is gold!
@@ -9353,7 +9337,7 @@ static PyObject* GemRB_DropDraggedItem(PyObject * /*self*/, PyObject* args)
 		int res = cc->AddItem(si);
 		OverrideSound(si->ItemResRef, Sound, IS_DROP);
 		if (!Sound.IsEmpty()) {
-			core->GetAudioDrv()->Play(Sound, SFX_CHAN_GUI);
+			core->GetAudioDrv()->Play(Sound, SFXChannel::GUI);
 		}
 		if (res == 2) {
 			// Whole amount was placed
@@ -9484,7 +9468,7 @@ static PyObject* GemRB_DropDraggedItem(PyObject * /*self*/, PyObject* args)
 	}
 
 	if (Sound && Sound[0]) {
-		core->GetAudioDrv()->Play(Sound, SFX_CHAN_GUI);
+		core->GetAudioDrv()->Play(Sound, SFXChannel::GUI);
 	}
 	return PyLong_FromLong(res);
 }
@@ -11772,7 +11756,7 @@ static PyObject* GemRB_RunRestScripts(PyObject * /*self*/, PyObject* /*args*/)
 			}
 			GameScript* restscript = new GameScript(resRef, tar, 0, false);
 			if (restscript->Update()) {
-				// there could be several steps involved, so we can't reliably check tar->GetLastRested()
+				// there could be several steps involved, so we can't reliably check tar->Timers.lastRested
 				dreamed = 1;
 			}
 			delete restscript;
@@ -11815,7 +11799,7 @@ static PyObject* GemRB_RestParty(PyObject * /*self*/, PyObject* args)
 	// - resting in inns: popup a GUISTORE error window with the reason
 	PyObject* dict = PyDict_New();
 	ieStrRef err = ieStrRef::INVALID;
-	bool cannotRest = !game->CanPartyRest(flags, &err);
+	bool cannotRest = !game->CanPartyRest((RestChecks) flags, &err);
 	// fall back to the generic: you may not rest at this time
 	if (err == ieStrRef::INVALID) {
 		if (core->HasFeature(GFFlags::AREA_OVERRIDE)) {
@@ -11831,7 +11815,7 @@ static PyObject* GemRB_RestParty(PyObject * /*self*/, PyObject* args)
 	} else {
 		PyDict_SetItemString(dict, "ErrorMsg", PyLong_FromLong(-1));
 		// all is well, so do the actual resting
-		PyDict_SetItemString(dict, "Cutscene", PyBool_FromLong(game->RestParty(flags & REST_AREA, dream, hp)));
+		PyDict_SetItemString(dict, "Cutscene", PyBool_FromLong(game->RestParty((RestChecks) flags & RestChecks::Area, dream, hp)));
 	}
 
 	return dict;
@@ -12234,7 +12218,7 @@ static PyObject* GemRB_GetCombatDetails(PyObject * /*self*/, PyObject* args)
 	GET_ACTOR_GLOBAL();
 
 	leftorright = leftorright&1;
-	WeaponInfo wi = actor->weaponInfo[leftorright && actor->IsDualWielding()];
+	const WeaponInfo& wi = actor->weaponInfo[leftorright && actor->IsDualWielding()];
 	const ITMExtHeader* hittingheader = wi.extHeader; // same header, except for ranged weapons it is the ammo header
 	int tohit=20;
 	int DamageBonus=0;
@@ -13159,8 +13143,7 @@ static PyMethodDef GemRBMethods[] = {
 	METHOD(SpellCast, METH_VARARGS),
 	METHOD(StealFailed, METH_NOARGS),
 	METHOD(UnmemorizeSpell, METH_VARARGS),
-	METHOD(UpdateAmbientsVolume, METH_NOARGS),
-	METHOD(UpdateMusicVolume, METH_NOARGS),
+	METHOD(UpdateVolume, METH_VARARGS),
 	METHOD(UpdateWorldMap, METH_VARARGS),
 	METHOD(UseItem, METH_VARARGS),
 	METHOD(ValidTarget, METH_VARARGS),
@@ -13250,9 +13233,6 @@ GUIScript::~GUIScript(void)
 		}
 		Py_Finalize();
 	}
-	StoreSpells.clear();
-	SpecialItems.clear();
-	UsedItems.clear();
 
 	GUIAction[0]=UNINIT_IEDWORD;
 

@@ -8,7 +8,7 @@ FUNCTION(ADD_FLAG_IF_SUPPORTED)
 	SET(multiValueArgs "")
 	CMAKE_PARSE_ARGUMENTS("" "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-	IF(${_VALUE})
+	IF(DEFINED _VALUE) # so passing 0 works
 		SET(TEST_FLAG "${_FLAG}=${_VALUE}")
 	ELSE ()
 		SET(TEST_FLAG "${_FLAG}")
@@ -17,11 +17,11 @@ FUNCTION(ADD_FLAG_IF_SUPPORTED)
 	STRING(REGEX REPLACE "[^a-zA-Z0-9]" "_" HAS_FLAG ${TEST_FLAG})
 	CHECK_CXX_COMPILER_FLAG(${TEST_FLAG} ${HAS_FLAG})
 
-	IF(HAS_FLAG)
-		IF(${_VALUE})
+	IF(${HAS_FLAG})
+		IF(DEFINED _VALUE)
 			SET(_FLAG "${_FLAG}=${_VALUE}")
 		ENDIF ()
-		STRING(APPEND CMAKE_CXX_FLAGS " ${_FLAG}")
+		SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_FLAG}" PARENT_SCOPE)
 	ENDIF ()
 ENDFUNCTION()
 
@@ -71,6 +71,7 @@ FUNCTION(CONFIGURE_COMPILER)
 		# Fast math helps us covering some things that need a little more rework soon
 		ADD_FLAG_IF_SUPPORTED(FLAG "-ffast-math")
 		ADD_FLAG_IF_SUPPORTED(FLAG "-frounding-math")
+		ADD_FLAG_IF_SUPPORTED(FLAG "-fno-strict-aliasing")
 
 		IF(WIN32)
 			# GCC 4.5.0+ has shared libstdc++ without dllimport
@@ -83,7 +84,7 @@ FUNCTION(CONFIGURE_COMPILER)
 		ENDIF (NOT APPLE AND NOT UNSAFE_PLUGIN)
 	ENDIF ()
 
-	IF(CMAKE_COMPILER_ID MATCHES "GNU")
+	IF(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
 		STRING(APPEND CMAKE_CXX_FLAGS " -Wcast-align")
 		ADD_FLAG_IF_SUPPORTED(
 			FLAG "-Wno-error"
@@ -109,9 +110,10 @@ FUNCTION(CONFIGURE_COMPILER)
 		ENDIF ()
 
 		ADD_FLAG_IF_SUPPORTED(FLAG "-Wimplicit-fallthrough" VALUE "2")
+		ADD_FLAG_IF_SUPPORTED(FLAG "-Woverloaded-virtual" VALUE "0")
 	ENDIF ()
 
-	IF(CMAKE_COMPILER_ID MATCHES "Clang")
+	IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 		IF(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6 OR APPLE)
 			STRING(APPEND CMAKE_CXX_FLAGS " -Wno-error=pedantic")
 		ENDIF ()
@@ -121,23 +123,27 @@ FUNCTION(CONFIGURE_COMPILER)
 		STRING(APPEND CMAKE_CXX_FLAGS " /fp:fast") 
 	ENDIF()
 
+	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" PARENT_SCOPE)
+	SET(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}" PARENT_SCOPE)
+	SET(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS}" PARENT_SCOPE)
 	USE_SCCACHE_IF_AVAILABLE()
 ENDFUNCTION()
 
 FUNCTION(CONFIGURE_PYTHON)
 	IF(PYTHON_VERSION STREQUAL "Auto")
-		FIND_PACKAGE(PythonLibs 3)
+		FIND_PACKAGE(Python 3 COMPONENTS Development REQUIRED)
 		# Record for reporting later
 		SET_INTERNAL(PYTHON_VERSION 3)
 	ELSEIF(PYTHON_VERSION STREQUAL "2")
 		MESSAGE(FATAL_ERROR "Python 2 support has been removed, rerun cmake in a clean build dir.")
 	ELSE()
-		FIND_PACKAGE(PythonLibs ${PYTHON_VERSION} REQUIRED)
+		FIND_PACKAGE(Python ${PYTHON_VERSION} COMPONENTS Development REQUIRED)
 	ENDIF()
-	IF(PYTHONLIBS_FOUND)
+	IF(Python_FOUND)
 		MESSAGE(STATUS "Looking for Python libraries and headers: found")
-		INCLUDE_DIRECTORIES(SYSTEM ${PYTHON_INCLUDE_DIRS})
-		SET_INTERNAL(PYTHON_LIBRARIES "${PYTHON_LIBRARIES}")
+		INCLUDE_DIRECTORIES(SYSTEM ${Python_INCLUDE_DIRS})
+		SET_INTERNAL(PYTHON_INCLUDE_DIRS "${Python_INCLUDE_DIRS}")
+		SET_INTERNAL(PYTHON_LIBRARIES "${Python_LIBRARIES}")
 	ENDIF()
 ENDFUNCTION()
 
@@ -276,10 +282,10 @@ ENDFUNCTION()
 FUNCTION(CONFIGURE_FOR_SANITIZE SANITIZE)
 	STRING(TOLOWER ${SANITIZE} SANITIZE_LOWERCASE)
 	IF(NOT SANITIZE_LOWERCASE STREQUAL "none")
-		STRING(APPEND CMAKE_C_FLAGS " -O0 -g -fsanitize=${SANITIZE} -fno-omit-frame-pointer")
-		STRING(APPEND CMAKE_CXX_FLAGS " -O0 -g -fsanitize=${SANITIZE} -fno-omit-frame-pointer")
-		STRING(APPEND CMAKE_EXE_LINKER_FLAGS " -fsanitize=${SANITIZE}")
-		STRING(APPEND CMAKE_SHARED_LINKER_FLAGS " -fsanitize=${SANITIZE}")
+		SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -g -fsanitize=${SANITIZE} -fno-omit-frame-pointer" PARENT_SCOPE)
+		SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g -fsanitize=${SANITIZE} -fno-omit-frame-pointer" PARENT_SCOPE)
+		SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=${SANITIZE}" PARENT_SCOPE)
+		SET(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=${SANITIZE}" PARENT_SCOPE)
 		# also CMAKE_MODULE_LINKER_FLAGS for macs?
 	ENDIF()
 ENDFUNCTION()
@@ -438,6 +444,7 @@ FUNCTION(ADD_GEMRB_PLUGIN plugin_name)
 			TARGET_LINK_LIBRARIES(${plugin_name} -lbsd)
 		ENDIF (CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
 	ENDIF (STATIC_LINK)
+	target_compile_definitions(${plugin_name} PRIVATE _USE_MATH_DEFINES)
 
 	IF(APPLE)
 		SET_TARGET_PROPERTIES(${plugin_name} PROPERTIES PREFIX ""
@@ -456,6 +463,7 @@ FUNCTION(ADD_GEMRB_PLUGIN_TEST plugin_name)
 	# TODO: think of a way to add additional libs for linking
 	IF (BUILD_TESTING)
 		ADD_EXECUTABLE(Test_${plugin_name} ${ARGN})
+		target_compile_definitions(Test_${plugin_name} PRIVATE _USE_MATH_DEFINES)
 
 		TARGET_LINK_LIBRARIES(Test_${plugin_name} GTest::gtest GTest::gtest_main gemrb_core)
 
@@ -527,6 +535,14 @@ ENDFUNCTION()
 FUNCTION(CONFIGURE_RPI_SPECIFICS)
 	# check for RaspberryPi
 	FIND_FILE(RPI NAMES bcm_host.h PATHS "/opt/vc/include")
+
+	IF(RPI AND CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+		MESSAGE(FATAL_ERROR
+			"GCC v12/13 have shown to cause a mysterious and severe bug on RPi (see issue #2088)."
+			" Please use Clang in the meantime, or check if a newer GCC version may work again."
+		)
+	ENDIF()
+
 	# By default, Pi0 to Pi3 models use the legacy (Broadcom) GLESv2 drivers, from /opt/vc.
 	# Newer models (Pi4) don't support it, using the open source MESA drivers.
 	# NOTE: the Pi3B(+) models can also run with open source MESA drivers, but support for it must be explicitely enabled

@@ -25,6 +25,8 @@
 
 #include "Debug.h"
 #include "SymbolMgr.h"
+
+#include "GameScript/Targets.h"
 #include "Scriptable/Actor.h"
 #include "Streams/DataStream.h"
 
@@ -100,30 +102,6 @@ enum class EscapeArea {
 
 using StringParam = FixedSizeString<64, strnicmp>;
 static_assert(std::is_standard_layout<StringParam>::value, "Fixed Size String must be standard layout for use in unions");
-
-struct targettype {
-	Scriptable *actor; //hmm, could be door
-	unsigned int distance;
-};
-
-using targetlist = std::list<targettype>;
-
-class GEM_EXPORT Targets {
-	targetlist objects;
-public:
-	Targets() noexcept {};
-	
-	int Count() const;
-	void dump() const;
-	targettype *RemoveTargetAt(targetlist::iterator &m);
-	const targettype *GetNextTarget(targetlist::iterator &m, int Type);
-	const targettype *GetLastTarget(int Type);
-	const targettype *GetFirstTarget(targetlist::iterator &m, int Type);
-	Scriptable *GetTarget(unsigned int index, int Type);
-	void AddTarget(Scriptable* target, unsigned int distance, int flags);
-	void Clear();
-	void FilterObjectRect(const Object *oC);
-};
 
 class Canary {
 private:
@@ -971,13 +949,13 @@ public: //Script Functions
 	static void ChangeAIScript(Scriptable* Sender, Action* parameters);
 	static void ChangeAIType(Scriptable* Sender, Action* parameters);
 	static void ChangeAlignment(Scriptable* Sender, Action* parameters);
-	static void ChangeAllegiance(Scriptable* Sender, Action* parameters);
 	static void ChangeAnimation(Scriptable* Sender, Action* parameters);
 	static void ChangeAnimationNoEffect(Scriptable* Sender, Action* parameters);
 	static void ChangeClass(Scriptable* Sender, Action* parameters);
 	static void ChangeColor(Scriptable* Sender, Action* parameters);
 	static void ChangeDestination(Scriptable* Sender, Action* parameters);
 	static void ChangeDialogue(Scriptable* Sender, Action* parameters);
+	static void ChangeEnemyAlly(Scriptable* Sender, Action* parameters);
 	static void ChangeGender(Scriptable* Sender, Action* parameters);
 	static void ChangeGeneral(Scriptable* Sender, Action* parameters);
 	static void ChangeRace(Scriptable* Sender, Action* parameters);
@@ -1500,6 +1478,12 @@ public: //Script Functions
 	static Targets *NinthNearestEnemyOfType(const Scriptable *Sender, Targets *parameters, int ga_flags);
 	static Targets *NinthNearestMyGroupOfType(const Scriptable *Sender, Targets *parameters, int ga_flags);
 	static Targets *Nothing(const Scriptable *Sender, Targets *parameters, int ga_flags);
+	static Targets* PartySlot1(const Scriptable* Sender, Targets* parameters, int gaFlags);
+	static Targets* PartySlot2(const Scriptable* Sender, Targets* parameters, int gaFlags);
+	static Targets* PartySlot3(const Scriptable* Sender, Targets* parameters, int gaFlags);
+	static Targets* PartySlot4(const Scriptable* Sender, Targets* parameters, int gaFlags);
+	static Targets* PartySlot5(const Scriptable* Sender, Targets* parameters, int gaFlags);
+	static Targets* PartySlot6(const Scriptable* Sender, Targets* parameters, int gaFlags);
 	static Targets *Player1(const Scriptable *Sender, Targets *parameters, int ga_flags);
 	static Targets *Player1Fill(const Scriptable *Sender, Targets *parameters, int ga_flags);
 	static Targets *Player2(const Scriptable *Sender, Targets *parameters, int ga_flags);
@@ -1565,12 +1549,16 @@ public: //Script Functions
 	/*GemRB extensions/objects*/
 	static Targets *Player7(const Scriptable *Sender, Targets *parameters, int ga_flags);
 	static Targets *Player7Fill(const Scriptable *Sender, Targets *parameters, int ga_flags);
+	static Targets* PartySlot7(const Scriptable* Sender, Targets* parameters, int gaFlags);
 	static Targets *Player8(const Scriptable *Sender, Targets *parameters, int ga_flags);
 	static Targets *Player8Fill(const Scriptable *Sender, Targets *parameters, int ga_flags);
+	static Targets* PartySlot8(const Scriptable* Sender, Targets* parameters, int gaFlags);
 	static Targets *Player9(const Scriptable *Sender, Targets *parameters, int ga_flags);
 	static Targets *Player9Fill(const Scriptable *Sender, Targets *parameters, int ga_flags);
+	static Targets* PartySlot9(const Scriptable* Sender, Targets* parameters, int gaFlags);
 	static Targets *Player10(const Scriptable *Sender, Targets *parameters, int ga_flags);
 	static Targets *Player10Fill(const Scriptable *Sender, Targets *parameters, int ga_flags);
+	static Targets* PartySlot10(const Scriptable* Sender, Targets* parameters, int gaFlags);
 };
 
 GEM_EXPORT Action* GenerateAction(std::string String);

@@ -19,7 +19,6 @@
  */
 
 #include "GameScript/GSUtils.h"
-#include "GameScript/Matching.h"
 
 #include "strrefs.h"
 #include "defsounds.h"
@@ -528,13 +527,13 @@ void DisplayStringCore(Scriptable* const Sender, ieStrRef Strref, int flags, con
 		}
 
 		if (flags&DS_QUEUE) soundFlags |= GEM_SND_QUEUE;
-		
-		unsigned int channel = SFX_CHAN_DIALOG;
+
+		SFXChannel channel = SFXChannel::Dialog;
 		if (flags & DS_CONST && actor) {
 			if (actor->InParty > 0) {
-				channel = SFX_CHAN_CHAR0 + actor->InParty - 1;
+				channel = SFXChannel(ieByte(SFXChannel::Char0) + actor->InParty - 1);
 			} else if (actor->GetStat(IE_EA) >= EA_EVILCUTOFF) {
-				channel = SFX_CHAN_MONSTER;
+				channel = SFXChannel::Monster;
 			}
 		}
 		
@@ -668,7 +667,7 @@ int MoveItemCore(Scriptable *Sender, Scriptable *target, const ResRef& resref, i
 		item = new CREItem();
 
 		if (count <= 0) count = 1;
-		if (!GetItemContainer(*item, myinv, ResRef(resref), count)) {
+		if (!GetItemContainer(*item, myinv, resref, count)) {
 			delete item;
 			item = NULL;
 		}
@@ -987,13 +986,19 @@ void ChangeAnimationCore(Actor* src, const ResRef& replacement, bool effect)
 	}
 }
 
+// check for searchmap travel regions, which should be identical to accessible map borders in practice
+static bool NearEdge(const Scriptable* escapee)
+{
+	return bool(escapee->GetCurrentArea()->GetBlocked(escapee->Pos) & PathMapFlags::TRAVEL);
+}
+
 void EscapeAreaCore(Scriptable* Sender, const Point& p, const ResRef& area, const Point& enter, EscapeArea flags, int wait)
 {
 	if (Sender->CurrentActionTicks<100) {
 		if (!p.IsInvalid() && PersonalDistance(p, Sender)>MAX_OPERATING_DISTANCE) {
 			//MoveNearerTo will return 0, if the actor is in move
 			//it will return 1 (the fourth parameter) if the target is unreachable
-			if (!MoveNearerTo(Sender, p, MAX_OPERATING_DISTANCE,1) ) {
+			if (!MoveNearerTo(Sender, p, MAX_OPERATING_DISTANCE, 1) && !NearEdge(Sender)) {
 				if (!Sender->InMove()) Log(WARNING, "GSUtils", "At least it said so...");
 				// ensure the action doesn't get interrupted
 				// fixes Nalia starting a second dialog in the Coronet, if she gets a chance #253
@@ -1046,6 +1051,8 @@ static void GetTalkPositionFromScriptable(Scriptable* scr, Point &position)
 		case ST_DOOR: case ST_CONTAINER:
 			position = static_cast<Highlightable*>(scr)->TrapLaunch;
 			break;
+		default: // ST_ANY
+			break;
 	}
 }
 
@@ -1074,6 +1081,8 @@ void GetPositionFromScriptable(const Scriptable *scr, Point &position, bool dest
 		// intentional fallthrough
 		case ST_DOOR: case ST_CONTAINER:
 			position = static_cast<const Highlightable*>(scr)->TrapLaunch;
+		default: // ST_ANY
+			break;
 	}
 }
 
@@ -1284,7 +1293,7 @@ void BeginDialog(Scriptable* Sender, const Action* parameters, int Flags)
 			// might not be equal to speaker anymore due to swapping
 			Actor *talker = (Actor *) scr;
 			if (!talker->Immobile() && !(talker->GetStat(IE_STATE_ID) & STATE_SLEEP) && !(talker->AppearanceFlags&APP_NOTURN)) {
-				talker->SetOrientation(tar->Pos, scr->Pos, true);
+				talker->SetOrientation(scr->Pos, tar->Pos, true);
 				if (talker->InParty) {
 					talker->SetStance(IE_ANI_READY);
 				}
@@ -1294,12 +1303,15 @@ void BeginDialog(Scriptable* Sender, const Action* parameters, int Flags)
 			// might not be equal to target anymore due to swapping
 			Actor *talkee = static_cast<Actor*>(tar);
 			if (!talkee->Immobile() && !(talkee->GetStat(IE_STATE_ID) & STATE_SLEEP) && !(talkee->AppearanceFlags&APP_NOTURN)) {
-				talkee->SetOrientation(scr->Pos, tar->Pos, true);
+				talkee->SetOrientation(tar->Pos, scr->Pos, true);
 				if (talkee->InParty) {
 					talkee->SetStance(IE_ANI_READY);
 				}
 				if (!core->InCutSceneMode()) {
+					// temporarily pretend the dialog already started, so the VB isn't spatial
+					gc->SetDialogueFlags(DF_IN_DIALOG, BitOp::OR);
 					talkee->DialogInterrupt();
+					gc->SetDialogueFlags(DF_IN_DIALOG, BitOp::NAND);
 				}
 			}
 		}
@@ -1343,7 +1355,7 @@ void MoveBetweenAreasCore(Actor* actor, const ResRef &area, const Point &positio
 	Map* map1 = actor->GetCurrentArea();
 	Map* map2;
 	Game* game = core->GetGame();
-	bool newSong = false;
+
 	if (!area.IsEmpty() && (!map1 || area != map1->GetScriptRef())) { //do we need to switch area?
 		//we have to change the pathfinder
 		//to the target area if adjust==true
@@ -1352,7 +1364,6 @@ void MoveBetweenAreasCore(Actor* actor, const ResRef &area, const Point &positio
 			map1->RemoveActor( actor );
 		}
 		map2->AddActor( actor, true );
-		newSong = true;
 
 		// update the worldmap if needed
 		if (actor->InParty) {
@@ -1373,9 +1384,6 @@ void MoveBetweenAreasCore(Actor* actor, const ResRef &area, const Point &positio
 	if (actor->InParty) {
 		GameControl *gc=core->GetGameControl();
 		gc->SetScreenFlags(ScreenFlags::CenterOnActor, BitOp::OR);
-		if (newSong) {
-			game->ChangeSong(false, true);
-		}
 	}
 }
 
@@ -1472,7 +1480,7 @@ void AttackCore(Scriptable *Sender, Scriptable *target, int flags)
 
 	// if held or disabled, etc, then cannot start or continue attacking
 	if (attacker->Immobile()) {
-		attacker->roundTime = 0;
+		attacker->Timers.roundStart = 0;
 		Sender->ReleaseCurrentAction();
 		return;
 	}
@@ -1493,7 +1501,12 @@ void AttackCore(Scriptable *Sender, Scriptable *target, int flags)
 
 	if (tar) {
 		// release if target is invisible to sender (because of death or invisbility spell)
-		if (tar->IsInvisibleTo(Sender) || (tar->GetSafeStat(IE_STATE_ID) & STATE_DEAD)){
+		// the original didn't check for dead directly, but it did check area match (we move instead, below)
+		// only for Attack, AttackNoSound, AttackOneRound, maybe not AttackReevaluate
+		if (tar->IsInvisibleTo(Sender) ||
+		    (tar->GetSafeStat(IE_STATE_ID) & STATE_DEAD) ||
+		    (tar->GetInternalFlag() & (IF_ACTIVE | IF_VISIBLE)) != (IF_ACTIVE | IF_VISIBLE) ||
+		    tar->GetStat(IE_AVATARREMOVAL)) {
 			attacker->StopAttack();
 			Sender->ReleaseCurrentAction();
 			attacker->AddTrigger(TriggerEntry(trigger_targetunreachable, tar->GetGlobalID()));
@@ -1528,7 +1541,7 @@ void AttackCore(Scriptable *Sender, Scriptable *target, int flags)
 		}
 	}
 
-	double angle = AngleFromPoints(attacker->Pos, target->Pos);
+	float_t angle = AngleFromPoints(attacker->Pos, target->Pos);
 	if (attacker->GetCurrentArea() != target->GetCurrentArea() ||
 		!WithinPersonalRange(attacker, target, weaponRange) ||
 		!attacker->GetCurrentArea()->IsVisibleLOS(attacker->Pos, target->Pos) ||
@@ -1594,6 +1607,7 @@ static int GetIdsValue(const char *&symbol, const ResRef& idsname)
 		symbolName[x] = *symbol;
 		symbol++;
 	}
+	if (symbolName.substr(0, 6) == "anyone") return 0;
 	return valHook->GetValue(symbolName);
 }
 
@@ -1912,10 +1926,10 @@ void MoveNearerTo(Scriptable *Sender, const Scriptable *target, int distance, in
 
 	// account for PersonalDistance (which caller uses, but pathfinder doesn't)
 	if (distance) {
-		distance += mover->CircleSize2Radius() * 4; // DistanceFactor
+		distance -= mover->CircleSize2Radius() * 4; // DistanceFactor
 	}
 	if (distance && target->Type == ST_ACTOR) {
-		distance += static_cast<const Actor*>(target)->CircleSize2Radius() * 4;
+		distance -= static_cast<const Actor*>(target)->CircleSize2Radius() * 4;
 	}
 
 	MoveNearerTo(Sender, p, distance, dont_release);
@@ -2324,14 +2338,13 @@ bool DiffCore(ieDword a, ieDword b, int diffMode)
 	}
 }
 
-int GetGroup(const Actor *actor)
+GroupType GetGroup(const Actor* actor)
 {
-	int type = 2; //neutral, has no enemies
+	GroupType type = GroupType::Neutral;
 	if (actor->GetStat(IE_EA) <= EA_GOODCUTOFF) {
-		type = 1; //PC
-	}
-	else if (actor->GetStat(IE_EA) >= EA_EVILCUTOFF) {
-		type = 0;
+		type = GroupType::PC;
+	} else if (actor->GetStat(IE_EA) >= EA_EVILCUTOFF) {
+		type = GroupType::Enemy;
 	}
 	return type;
 }
@@ -2339,11 +2352,11 @@ int GetGroup(const Actor *actor)
 Actor *GetNearestEnemyOf(const Map *map, const Actor *origin, int whoseeswho)
 {
 	//determining the allegiance of the origin
-	int type = GetGroup(origin);
+	GroupType type = GetGroup(origin);
 
 	//neutral has no enemies
-	if (type==2) {
-		return NULL;
+	if (type == GroupType::Neutral) {
+		return nullptr;
 	}
 
 	Targets *tgts = new Targets();
@@ -2366,12 +2379,11 @@ Actor *GetNearestEnemyOf(const Map *map, const Actor *origin, int whoseeswho)
 		}
 
 		int distance = Distance(ac, origin);
-		if (type) { //origin is PC
+		if (type == GroupType::PC) {
 			if (ac->GetStat(IE_EA) >= EA_EVILCUTOFF) {
 				tgts->AddTarget(ac, distance, GA_NO_DEAD|GA_NO_UNSCHEDULED);
 			}
-		}
-		else {
+		} else { // GroupType::Enemy
 			if (ac->GetStat(IE_EA) <= EA_GOODCUTOFF) {
 				tgts->AddTarget(ac, distance, GA_NO_DEAD|GA_NO_UNSCHEDULED);
 			}
@@ -2444,7 +2456,7 @@ unsigned int GetSpellDistance(const ResRef& spellRes, Scriptable* Sender, const 
 	}
 
 	if (!target.IsZero()) {
-		double angle = AngleFromPoints(Sender->Pos, target);
+		float_t angle = AngleFromPoints(Sender->Pos, target);
 		return Feet2Pixels(dist, angle);
 	}
 
@@ -2454,7 +2466,7 @@ unsigned int GetSpellDistance(const ResRef& spellRes, Scriptable* Sender, const 
 
 /* returns an item's casting distance, it depends on the used header, and targeting mode too
  the used header is explicitly given */
-unsigned int GetItemDistance(const ResRef& itemres, int header, double angle)
+unsigned int GetItemDistance(const ResRef& itemres, int header, float_t angle)
 {
 	const Item* itm = gamedata->GetItem(itemres);
 	if (!itm) {
@@ -2711,9 +2723,13 @@ void SpellCore(Scriptable *Sender, Action *parameters, int flags)
 		// make sure we can still see the target
 		const Actor* target = Scriptable::As<const Actor>(tar);
 		const Spell* spl = gamedata->GetSpell(Sender->SpellResRef, true);
-		if (Sender != tar && !(flags & SC_NOINTERRUPT) && !(spl->Flags & SF_TARGETS_INVISIBLE) && target->IsInvisibleTo(Sender)) {
+		if (Sender != tar && target && !(flags & SC_NOINTERRUPT) &&
+		    ((!(spl->Flags & SF_TARGETS_INVISIBLE) && target->IsInvisibleTo(Sender)) ||
+		     (tar->GetInternalFlag() & (IF_ACTIVE | IF_VISIBLE)) != (IF_ACTIVE | IF_VISIBLE) ||
+		     target->GetStat(IE_AVATARREMOVAL))) {
 			Sender->ReleaseCurrentAction();
 			Sender->AddTrigger(TriggerEntry(trigger_targetunreachable, tar->GetGlobalID()));
+			displaymsg->DisplayConstantStringName(HCStrings::NoSeeNoCast, GUIColors::RED, Sender);
 			core->Autopause(AUTOPAUSE::NOTARGET, Sender);
 			gamedata->FreeSpell(spl, Sender->SpellResRef, false);
 			return;
@@ -2743,7 +2759,7 @@ void SpellCore(Scriptable *Sender, Action *parameters, int flags)
 
 		//face target
 		if (tar != Sender) {
-			act->SetOrientation(tar->Pos, act->Pos, false);
+			act->SetOrientation(act->Pos, tar->Pos, false);
 		}
 
 		//stop doing anything else
@@ -2866,7 +2882,7 @@ void SpellPointCore(Scriptable *Sender, Action *parameters, int flags)
 		}
 
 		//face target
-		act->SetOrientation(parameters->pointParameter, act->Pos, false);
+		act->SetOrientation(act->Pos, parameters->pointParameter, false);
 		//stop doing anything else
 		act->SetModal(Modal::None);
 	}
@@ -2945,7 +2961,7 @@ void AddXPCore(const Action *parameters, bool divide)
 		// give xp to everyone
 		core->GetGame()->ShareXP(atoi(xpvalue), 0);
 	}
-	core->PlaySound(DS_GOTXP, SFX_CHAN_ACTIONS);
+	core->PlaySound(DS_GOTXP, SFXChannel::Actions);
 }
 
 int NumItemsCore(Scriptable *Sender, const Trigger *parameters)
@@ -3059,7 +3075,7 @@ void RunAwayFromCore(Scriptable* Sender, const Action* parameters, int flags)
 	}
 
 	// estimate max distance with time and actor speed
-	double speed = actor->GetSpeed();
+	float_t speed = actor->GetSpeed();
 	int maxDistance = parameters->int0Parameter;
 	if (speed) {
 		maxDistance = static_cast<int>(maxDistance * gamedata->GetStepTime() / speed);

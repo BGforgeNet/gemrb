@@ -43,6 +43,7 @@
 #include "damages.h"
 #include "GameScript/GSUtils.h" //needs for MoveBetweenAreasCore
 #include "GameScript/Matching.h" //needs for GetAllObjects
+#include "GameScript/Targets.h" // fx_teleport_to_target
 #include "GUI/GameControl.h"
 #include "Scriptable/Actor.h"
 #include "Scriptable/Container.h"
@@ -982,7 +983,7 @@ static inline void HandleMainStatBonus(const Actor *target, int stat, Effect *fx
 static inline void PlayRemoveEffect(const Actor *target, const Effect* fx, StringView defsound = StringView())
 {
 	core->GetAudioDrv()->Play(fx->Resource.IsEmpty() ? defsound : StringView(fx->Resource),
-			SFX_CHAN_ACTIONS, target->Pos, GEM_SND_SPATIAL);
+				  SFXChannel::Actions, target->Pos, GEM_SND_SPATIAL);
 }
 
 //resurrect code used in many places
@@ -1493,7 +1494,7 @@ int fx_death (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		// Actor::CheckOnDeath handles the actual chunking
 		damagetype = DAMAGE_CRUSHING|DAMAGE_CHUNKING;
 		// bg1 & iwds have this file, bg2 & pst none
-		core->GetAudioDrv()->Play("GORE", SFX_CHAN_HITS, target->Pos, GEM_SND_SPATIAL);
+		core->GetAudioDrv()->Play("GORE", SFXChannel::Hits, target->Pos, GEM_SND_SPATIAL);
 		break;
 	case 16:
 		BASE_STATE_SET(STATE_PETRIFIED);
@@ -1507,12 +1508,12 @@ int fx_death (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		if (!target->GetStat(IE_DISABLECHUNKING)) BASE_STATE_SET(STATE_PETRIFIED);
 		damagetype = DAMAGE_CRUSHING|DAMAGE_CHUNKING;
 		// file only in iwds
-		core->GetAudioDrv()->Play("GORE2", SFX_CHAN_HITS, target->Pos, GEM_SND_SPATIAL);
+		core->GetAudioDrv()->Play("GORE2", SFXChannel::Hits, target->Pos, GEM_SND_SPATIAL);
 		break;
 	case 128:
 		if (!target->GetStat(IE_DISABLECHUNKING)) BASE_STATE_SET(STATE_FROZEN);
 		damagetype = DAMAGE_COLD|DAMAGE_CHUNKING;
-		core->GetAudioDrv()->Play("GORE2", SFX_CHAN_HITS, target->Pos, GEM_SND_SPATIAL);
+		core->GetAudioDrv()->Play("GORE2", SFXChannel::Hits, target->Pos, GEM_SND_SPATIAL);
 		break;
 	case 256:
 		damagetype = DAMAGE_ELECTRICITY;
@@ -3215,6 +3216,10 @@ int fx_set_diseased_state(Scriptable* Owner, Actor* target, Effect* fx)
 		break;
 	default:
 		damage = 1;
+		// per second
+		if (core->GetGame()->GameTime % target->GetAdjustedTime(aRound)) {
+			return FX_APPLIED;
+		}
 		break;
 	}
 	//percent
@@ -3754,11 +3759,11 @@ int fx_remove_item (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 
 		// "EFF_M02" was hardcoded in the originals, but EEs added extra options
 		if (fx->Parameter1 == 0) {
-			core->PlaySound(DS_ITEM_GONE, SFX_CHAN_GUI);
+			core->PlaySound(DS_ITEM_GONE, SFXChannel::GUI);
 		} else if (fx->Parameter1 == 1) {
-			core->GetAudioDrv()->Play("AMB_D02B", SFX_CHAN_GUI);
+			core->GetAudioDrv()->Play("AMB_D02B", SFXChannel::GUI);
 		} else if (fx->Parameter1 == 2) {
-			core->GetAudioDrv()->Play(fx->Resource2, SFX_CHAN_GUI);
+			core->GetAudioDrv()->Play(fx->Resource2, SFXChannel::GUI);
 		}
 	}
 
@@ -4395,6 +4400,9 @@ static void CopyPolymorphStats(Actor *source, Actor *target)
 	for (size_t i = 0; i < polystats.size(); ++i) {
 		target->polymorphCache->stats[i] = source->Modified[polystats[i]];
 	}
+	// reset stance since some polymorph targets don't have conjuration animations
+	// eg. spin141 from iwd1
+	target->SetStance(IE_ANI_AWAKE);
 }
 
 int fx_polymorph (Scriptable* /*Owner*/, Actor* target, Effect* fx)
@@ -4531,7 +4539,7 @@ int fx_display_string (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 			// mrttaunt.src has placeholder text, but valid audio, so enable just sound
 			if (fx->IsVariable) {
 				StringBlock sb = core->strings->GetStringBlock(str);
-				core->GetAudioDrv()->Play(StringView(sb.Sound), SFX_CHAN_ACTIONS, target->Pos, GEM_SND_SPATIAL);
+				core->GetAudioDrv()->Play(StringView(sb.Sound), SFXChannel::Actions, target->Pos, GEM_SND_SPATIAL);
 			} else {
 				fx->Parameter1 = ieDword(str);
 				DisplayStringCore(target, str, DS_HEAD);
@@ -4572,14 +4580,14 @@ int fx_casting_glow (Scriptable* Owner, Actor* target, Effect* fx)
 		}
 		// as per the original bg2 code, should we externalize?
 		// only dragons got a different x, y, z offset (x and y being handled in the projectile)
-		int heightmod = core->HasFeature(GFFlags::PST_STATE_FLAGS) ? ProHeights::None : ProHeights::Normal;
+		ProHeights heightmod = core->HasFeature(GFFlags::PST_STATE_FLAGS) ? ProHeights::None : ProHeights::Normal;
 		if (target->ValidTarget(GA_BIGBAD)) {
 			heightmod = ProHeights::Dragon;
 		}
 		Point offset = Projectile::GetStartOffset(target);
 		sca->XOffset += offset.x;
 		sca->YOffset += offset.y;
-		sca->ZOffset = heightmod;
+		sca->ZOffset = int(heightmod);
 		sca->SetBlend();
 		if (fx->Duration) {
 			sca->SetDefaultDuration(fx->Duration-core->GetGame()->GameTime);
@@ -4743,7 +4751,8 @@ int fx_cast_spell (Scriptable* Owner, Actor* target, Effect* fx)
 	if (fx->Parameter2 == 0 || target->Type == ST_CONTAINER) {
 		// no deplete, no interrupt, caster or provided level
 		std::string tmp = fmt::format("ForceSpellRES(\"{}\",[-1],{})", fx->Resource, fx->Parameter1);
-		Action* forceSpellAction = GenerateActionDirect(std::move(tmp), target);
+		Scriptable* target2 = Owner->GetCurrentArea()->GetScriptable(fx->Pos, 0); // refetch for non-actors
+		Action* forceSpellAction = GenerateActionDirect(std::move(tmp), target2);
 		Owner->AddActionInFront(forceSpellAction);
 		Owner->ImmediateEvent();
 	} else if (fx->Parameter2 == 1) {
@@ -5259,9 +5268,9 @@ int fx_playsound (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 
 	//this is probably inaccurate
 	if (target) {
-		core->GetAudioDrv()->Play(fx->Resource, SFX_CHAN_HITS, target->Pos, GEM_SND_SPATIAL);
+		core->GetAudioDrv()->Play(fx->Resource, SFXChannel::Hits, target->Pos, GEM_SND_SPATIAL);
 	} else {
-		core->GetAudioDrv()->Play(fx->Resource, SFX_CHAN_HITS);
+		core->GetAudioDrv()->Play(fx->Resource, SFXChannel::Hits);
 	}
 	//this is an instant, it shouldn't stick
 	return FX_NOT_APPLIED;
@@ -5274,7 +5283,7 @@ int fx_hold_creature_no_icon (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	// print("fx_hold_creature_no_icon(%2d): Value: %d, IDS: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
 
 	//actually the original engine just skips this effect if the target is dead
-	if ( STATE_GET(STATE_DEAD) ) {
+	if (STATE_GET(STATE_DEAD) || core->InCutSceneMode()) {
 		return FX_NOT_APPLIED;
 	}
 
@@ -6685,10 +6694,10 @@ int fx_wing_buffet (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	switch(fx->Parameter2) {
 		case 2: // away
 		default:
-			dir = GetOrient(target->Pos, fx->Source);
+			dir = GetOrient(fx->Source, target->Pos);
 			break;
 		case 4: // towards
-			dir = GetOrient(fx->Source, target->Pos);
+			dir = GetOrient(target->Pos, fx->Source);
 			break;
 		case 5: // fixed direction
 			dir = ClampToOrientation(fx->Parameter3);
@@ -7434,7 +7443,7 @@ int fx_teleport_to_target (Scriptable* /*Owner*/, Actor* target, Effect* /*fx*/)
 			// no enemy to jump to
 			return FX_NOT_APPLIED;
 		}
-		int rnd = core->Roll(1,tgts->Count(),-1);
+		unsigned int rnd = RAND<unsigned int>(1, tgts->Count()) - 1;
 		const Actor *victim = (Actor *) tgts->GetTarget(rnd, ST_ACTOR);
 		delete tgts;
 		if (victim && PersonalDistance(victim, target)>20) {

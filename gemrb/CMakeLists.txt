@@ -102,6 +102,7 @@ ELSE(APPLE)
 	INSTALL( FILES "${CMAKE_CURRENT_BINARY_DIR}/GemRB.cfg.sample" GemRB.cfg.noinstall.sample DESTINATION ${EXAMPLE_CONF_DIR} )
 	INSTALL(FILES "${CMAKE_CURRENT_BINARY_DIR}/GemRB.cfg.sample" RENAME GemRB.cfg DESTINATION ${EXAMPLE_CONF_DIR})
 ENDIF(APPLE)
+target_compile_definitions(gemrb PRIVATE _USE_MATH_DEFINES)
 
 # we need to add gemrb target before processing plugins or COCOA plugins don't work right.
 ADD_SUBDIRECTORY( plugins )
@@ -172,6 +173,7 @@ ENDIF(VITA)
 # Tests
 IF (BUILD_TESTING)
   ADD_EXECUTABLE(Test_gemrb_core
+    tests/core/Test_Orient.cpp
     tests/core/Streams/Test_DataStream.cpp
     tests/core/Strings/Test_CString.cpp
     tests/core/Strings/Test_String.cpp
@@ -180,6 +182,7 @@ IF (BUILD_TESTING)
     tests/core/System/Test_VFS.cpp
   )
 
+  target_compile_definitions(Test_gemrb_core PRIVATE _USE_MATH_DEFINES)
   TARGET_LINK_LIBRARIES(Test_gemrb_core GTest::gtest GTest::gtest_main gemrb_core ${Iconv_LIBRARY})
   IF (WIN32)
     TARGET_LINK_LIBRARIES(Test_gemrb_core shlwapi)

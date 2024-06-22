@@ -36,9 +36,9 @@
 
 #include "GameScript/GSUtils.h"
 #include "Scriptable/Actor.h"
+#include "fmt/ranges.h"
 
 #include <cstdio>
-#include <fmt/ranges.h>
 
 namespace GemRB {
 
@@ -337,6 +337,7 @@ void Inventory::KillSlot(size_t index)
 	}
 	const CREItem *item = Slots[index];
 	if (!item) {
+		CacheAllWeaponInfo();
 		return;
 	}
 
@@ -350,6 +351,7 @@ void Inventory::KillSlot(size_t index)
 
 	int effect = core->QuerySlotEffects((unsigned int) index);
 	if (!effect) {
+		CacheAllWeaponInfo();
 		return;
 	}
 	RemoveSlotEffects(index);
@@ -376,11 +378,10 @@ void Inventory::KillSlot(size_t index)
 				RemoveSlotEffects(FindTypedRangedWeapon(header->ProjectileQualifier));
 				equip = FindRangedProjectile(header->ProjectileQualifier);
 				if (equip != IW_NO_EQUIPPED) {
-					EquipItem(GetWeaponSlot(equip));
+					recache = !EquipItem(GetWeaponSlot(equip));
 				} else {
-					EquipBestWeapon(EQUIP_MELEE);
+					recache = !EquipBestWeapon(EQUIP_MELEE);
 				}
-				recache = false;
 			}
 			UpdateWeaponAnimation();
 			break;
@@ -390,7 +391,7 @@ void Inventory::KillSlot(size_t index)
 			if (eqslot == (int)index) {
 				recache = false;
 				if ((int) index == SLOT_MAGIC) {
-					EquipBestWeapon(EQUIP_MELEE | EQUIP_RANGED | EQUIP_FORCE);
+					recache = !EquipBestWeapon(EQUIP_MELEE | EQUIP_RANGED | EQUIP_FORCE);
 					break;
 				}
 				SetEquippedSlot(IW_NO_EQUIPPED, 0);
@@ -417,9 +418,8 @@ void Inventory::KillSlot(size_t index)
 			type = header->ProjectileQualifier;
 			weaponslot = FindTypedRangedWeapon(type);
 			if (weaponslot == SLOT_FIST) { // a ranged weapon was not found - freshly unequipped
-				EquipBestWeapon(EQUIP_MELEE);
+				recache = !EquipBestWeapon(EQUIP_MELEE);
 				UpdateWeaponAnimation();
-				recache = false;
 				break;
 			}
 
@@ -444,11 +444,10 @@ void Inventory::KillSlot(size_t index)
 
 			equip = FindRangedProjectile(header->ProjectileQualifier);
 			if (equip != IW_NO_EQUIPPED) {
-				EquipItem(GetWeaponSlot(equip));
+				recache = !EquipItem(GetWeaponSlot(equip));
 			} else {
-				EquipBestWeapon(EQUIP_MELEE);
+				recache = !EquipBestWeapon(EQUIP_MELEE);
 			}
-			recache = false;
 			gamedata->FreeItem(itm2, item2->ItemResRef, false);
 
 			// reset Equipped if it is a ranged weapon slot
@@ -1328,6 +1327,11 @@ void Inventory::CacheAllWeaponInfo() const
 	CacheWeaponInfo(false);
 	if (Owner->IsDualWielding()) {
 		CacheWeaponInfo(true);
+	} else {
+		WeaponInfo& wi = Owner->weaponInfo[1];
+		wi.extHeader = nullptr;
+		wi.item = nullptr;
+		wi.wflags = 0;
 	}
 }
 
@@ -1634,11 +1638,13 @@ void Inventory::BreakItemSlot(ieDword slot)
 	//this depends on setslotitemres using setslotitem
 	SetSlotItemRes(newItem, slot, 0,0,0);
 	ieDword slotEffects = core->QuerySlotEffects(slot);
+	bool replaced = false;
 	if (slotEffects == SLOT_EFFECT_MELEE) {
-		EquipBestWeapon(EQUIP_MELEE);
+		replaced = EquipBestWeapon(EQUIP_MELEE);
 	} else if (slotEffects == SLOT_EFFECT_MISSILE) {
-		EquipBestWeapon(EQUIP_RANGED);
+		replaced = EquipBestWeapon(EQUIP_RANGED);
 	}
+	if (!replaced) CacheAllWeaponInfo();
 }
 
 std::string Inventory::dump(bool print) const
@@ -1651,7 +1657,7 @@ std::string Inventory::dump(bool print) const
 			continue;
 		}
 
-		AppendFormat(buffer, "{}: {} - {} Flags:{:#x}", i, itm->ItemResRef, itm->Usages, itm->Flags);
+		AppendFormat(buffer, "{}: {} - {} Flags: {:#x} ", i, itm->ItemResRef, itm->Usages, itm->Flags);
 		AppendFormat(buffer, "Wt: {} x {}Lb\n", (itm->Usages[0] && itm->MaxStackAmount) ? itm->Usages[0] : 1, itm->Weight);
 	}
 
@@ -1691,7 +1697,7 @@ bool Inventory::CanEquipRanged(int& maxDamage, ieDword& bestSlot) const
 	return maxDamage != -1;
 }
 
-void Inventory::EquipBestWeapon(int flags)
+bool Inventory::EquipBestWeapon(int flags)
 {
 	int damage = -1;
 	ieDword bestSlot = SLOT_FIST;
@@ -1700,12 +1706,12 @@ void Inventory::EquipBestWeapon(int flags)
 
 	//cannot change equipment when holding magic weapons
 	if (Equipped == SLOT_MAGIC - SLOT_MELEE && !(flags & EQUIP_FORCE)) {
-		return;
+		return false;
 	}
 
 	if (flags&EQUIP_RANGED) {
 		CanEquipRanged(damage, bestSlot);
-		if (int(bestSlot) == SLOT_FIST) return;
+		if (int(bestSlot) == SLOT_FIST) return false;
 	}
 
 	if (flags&EQUIP_MELEE) {
@@ -1714,7 +1720,7 @@ void Inventory::EquipBestWeapon(int flags)
 			if (!itm) continue;
 			//cannot change equipment when holding a cursed weapon
 			if (Slot->Flags & IE_INV_ITEM_CURSED) {
-				return;
+				return false;
 			}
 			//the Slot flag is enough for this
 			//though we need animation type/damagepotential anyway
@@ -1729,8 +1735,9 @@ void Inventory::EquipBestWeapon(int flags)
 		}
 	}
 
-	EquipItem(bestSlot);
+	bool equipped = EquipItem(bestSlot);
 	UpdateWeaponAnimation();
+	return equipped;
 }
 
 // returns true if there are more item usages not fitting in given vector

@@ -2,6 +2,11 @@
 *
           AT_1      AT_2       AT_3       AT_4       TYPE       SPACE      PALETTE    SIZE
 0x0100    SPCHUNKS  SPCHUNKS   SPCHUNKS   SPCHUNKS   13         0          0          *
+0x0200    SPBLOOD   SPBLOOD    SPBLOOD    SPBLOOD    13         0          1          *
+0x0210    SPBLOOD   SPBLOOD    SPBLOOD    SPBLOOD    13         0          1          *
+0x0220    SPBLOOD   SPBLOOD    SPBLOOD    SPBLOOD    13         0          1          *
+0x0230    SPBLOOD   SPBLOOD    SPBLOOD    SPBLOOD    13         0          1          *
+0x0240    SPBLOOD   SPBLOOD    SPBLOOD    SPBLOOD    13         0          1          *
 0x0300    SPSMPUFF  SPSMPUFF   SPSMPUFF   SPSMPUFF   13         0          0          *
 0x0400    SKLH      SKLH       SKLH       SKLH       13         0          1          *
 0x0410    GLPHWRDH  GLPHWRDH   GLPHWRDH   GLPHWRDH   13         0          1          *
@@ -325,7 +330,7 @@
 0xE780    MBA5      MBA5       MBA5       MBA5       9          2          1          *
 0xE790    MBA6      MBA6       MBA6       MBA6       9          2          1          *
 0xE7A0    MBAI      MBAI       MBAI       MBAI       9          2          1          *
-0xE7AC    MBAI      MBAI       MBAI       MBAI       9          4          1          *
+0xE7AC    MBAI      MBAI       MBAI       MBAI       9          1          1          *
 0xE7B0    MBOA      MBOA       MBOA       MBOA       9          2          1          *
 0xE7C0    MABW      MABW       MABW       MABW       9          2          1          *
 0xE7D0    MMAL      MMAL       MMAL       MMAL       9          2          1          *

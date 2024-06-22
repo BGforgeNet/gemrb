@@ -114,6 +114,7 @@ class Sprite2D;
 //#define IF_PARTYRESTED   0x200000 //party rested trigger event
 #define IF_FORCEUPDATE   0x400000
 #define IF_TRIGGER_AP    0x800000
+#define IF_DUMPED        0x1000000
 
 //the actor should stop attacking
 #define IF_STOPATTACK (IF_JUSTDIED|IF_REALLYDIED|IF_CLEANUP|IF_IDLE)
@@ -137,7 +138,7 @@ class Sprite2D;
 #define MAX_RAND_WALK 10
 
 using ScriptableType = enum ScriptableType { ST_ACTOR = 0, ST_PROXIMITY = 1, ST_TRIGGER = 2,
-	ST_TRAVEL = 3, ST_DOOR = 4, ST_CONTAINER = 5, ST_AREA = 6, ST_GLOBAL = 7 };
+	ST_TRAVEL = 3, ST_DOOR = 4, ST_CONTAINER = 5, ST_AREA = 6, ST_GLOBAL = 7, ST_ANY = 8 };
 
 enum {
 	trigger_acquired = 0x1, // unused and broken in the original
@@ -436,7 +437,7 @@ public:
 	Color overColor = ColorBlack;
 	Holder<Sprite2D> circleBitmap[2] = {};
 	int circleSize = 0;
-	float sizeFactor = 1.0f;
+	float_t sizeFactor = 1.0f;
 public:
 	void SetBBox(const Region &newBBox);
 	void DrawCircle(const Point& p) const;
@@ -444,7 +445,7 @@ public:
 	void SetOver(bool over);
 	bool IsSelected() const;
 	void Select(int Value);
-	void SetCircle(int size, float, const Color &color, Holder<Sprite2D> normal_circle, Holder<Sprite2D> selected_circle);
+	void SetCircle(int size, float_t, const Color &color, Holder<Sprite2D> normal_circle, Holder<Sprite2D> selected_circle);
 	int CircleSize2Radius() const;
 };
 
@@ -538,7 +539,7 @@ public:
 	int GetPathLength() const;
 //inliners to protect data consistency
 	inline PathListNode * GetStep() {
-		if (!step) {
+		if (!step && area) {
 			DoStep((unsigned int) ~0);
 		}
 		return step;

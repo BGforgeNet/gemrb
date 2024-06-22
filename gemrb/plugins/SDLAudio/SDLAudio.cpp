@@ -81,19 +81,17 @@ SDLAudio::~SDLAudio(void)
 	Mix_HookMusic(NULL, NULL);
 	FreeBuffers();
 	Mix_ChannelFinished(NULL);
+
+	SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
 
 bool SDLAudio::Init(void)
 {
-	// TODO: we assume SDLVideo already got loaded
 	if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) {
+		Log(ERROR, "SDLAudio", "InitSubSystem failed: {}", SDL_GetError());
 		return false;
 	}
-#ifdef RPI
 	if (Mix_OpenAudio(22050, MIX_DEFAULT_FORMAT, 2, 512) < 0) {
-#else
-	if (Mix_OpenAudio(22050, MIX_DEFAULT_FORMAT, 2, 8192) < 0) {
-#endif
 		return false;
 	}
 
@@ -222,7 +220,7 @@ Mix_Chunk* SDLAudio::loadSound(StringView ResRef, tick_t &time_length)
 	return chunk;
 }
 
-Holder<SoundHandle> SDLAudio::Play(StringView ResRef, unsigned int channel,
+Holder<SoundHandle> SDLAudio::Play(StringView ResRef, SFXChannel channel,
 	const Point& p, unsigned int flags, tick_t *length)
 {
 	Mix_Chunk *chunk;
@@ -274,7 +272,7 @@ Holder<SoundHandle> SDLAudio::Play(StringView ResRef, unsigned int channel,
 	}
 
 	// TODO: we need something like static_ptr_cast
-	return Holder<SoundHandle>(new SDLAudioSoundHandle(chunk, chan, flags));
+	return Holder<SoundHandle>(new SDLAudioSoundHandle(chunk, SFXChannel(chan), flags));
 }
 
 bool SDLAudio::Pause()

@@ -89,6 +89,12 @@ Particles::Particles(int s)
 	size = last_insert = s;
 }
 
+void Particles::SetColorIndex(ieByte c)
+{
+	colorIdx = c;
+	color = Color();
+}
+
 void Particles::SetBitmap(unsigned int FragAnimID)
 {
 	//int i;
@@ -182,14 +188,17 @@ void Particles::Draw(Point p)
 
 		int length; //used only for raindrops
 		if (state>=MAX_SPARK_PHASE) {
-			constexpr int maxDropLength = 6;
-			length = maxDropLength - abs(state - MAX_SPARK_PHASE - maxDropLength);
+			constexpr int maxDropLength = 10;
+			length = maxDropLength - std::abs(state - MAX_SPARK_PHASE - maxDropLength);
 			state = 0;
 		} else {
 			state=MAX_SPARK_PHASE-state-1;
 			length=0;
 		}
-		Color clr = sparkcolors[color][state];
+		Color clr = color;
+		if (!clr.Packed()) {
+			clr = sparkcolors[colorIdx][state];
+		}
 		switch (type) {
 		case SP_TYPE_BITMAP:
 			/*
@@ -228,7 +237,8 @@ void Particles::Draw(Point p)
 		// this is more like a raindrop
 		case SP_TYPE_LINE:
 			if (length) {
-				VideoDriver->DrawLine (points[i].pos - p, points[i].pos - p + Point((i&1), length), clr);
+				int y = length > 3 ? i & 1 : 0;
+				VideoDriver->DrawLine(points[i].pos - p, points[i].pos - p + Point(y, length), clr);
 			}
 			break;
 		}

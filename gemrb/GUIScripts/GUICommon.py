@@ -34,7 +34,7 @@ CommonTables.Load ()
 def GetWindowPack():
 	height = GemRB.GetSystemVariable (SV_HEIGHT)
 
-	if GemRB.GameType == "pst":
+	if GameCheck.IsPST ():
 		default = "GUIWORLD"
 	else:
 		default = "GUIW"
@@ -48,7 +48,9 @@ def GetWindowPack():
 	# 3. not all games have all the window packs
 	# ... but the widescreen mod only modifies guiw08 or guiw10, not touching others
 	# luckily internally its guiw08 is in the end produced as a copy of guiw10
-	if default == "GUIW" and GameCheck.HasWideScreenMod ():
+	if GameCheck.HasWideScreenMod ():
+		if GameCheck.IsBG1 () or GameCheck.IsPST ():
+			return default
 		return "GUIW10"
 	else:
 		if height >= 960 and GemRB.HasResource ("GUIW12", RES_CHU, 1):
@@ -387,13 +389,13 @@ def GetClassRowName(value, which=-1):
 
 # checks the classes.2da table if the class is multiclass/dualclass capable (bits define the class combination)
 def HasMultiClassBits(actor):
-	MultiBits = CommonTables.Classes.GetValue (GetClassRowName(actor), "MULTI")
+	MultiBits = CommonTables.Classes.GetValue (GetClassRowName(actor), "MULTI", GTV_STR)
 
 	# we have no entries for npc creature classes, so treat them as single-classed
 	if MultiBits == "*":
-		MultiBits = 0
+		return 0
 
-	return MultiBits
+	return int(MultiBits)
 
 def IsDualClassed(actor, verbose):
 	"""Returns an array containing the dual class information.
@@ -474,11 +476,11 @@ def IsDualSwap (actor, override=None):
 	if Dual[0] > 1:
 		BaseClass = GetClassRowName(Dual[1], "index")
 	else:
-		BaseClass = CommonTables.KitList.GetValue (Dual[1], 7)
+		BaseClass = CommonTables.KitList.GetValue (Dual[1], 7, GTV_STR)
 		if BaseClass == "*":
 			# mod boilerplate
 			return 0
-		BaseClass = GetClassRowName(BaseClass, "class")
+		BaseClass = GetClassRowName(int(BaseClass), "class")
 
 	# if our old class is the first class, we need to swap
 	if Class[0] == BaseClass:
@@ -564,16 +566,16 @@ def CanDualClass(actor):
 	# race restriction (human)
 	RaceName = CommonTables.Races.FindValue ("ID", GemRB.GetPlayerStat (actor, IE_RACE, 1))
 	if not RaceName:
-		return 1
+		return 0
 	RaceName = CommonTables.Races.GetRowName (RaceName)
-	RaceDual = CommonTables.Races.GetValue (RaceName, "CANDUAL")
-	if int(RaceDual) != 1:
-		return 1
+	RaceDual = CommonTables.Races.GetValue (RaceName, "CANDUAL", GTV_STR)
+	if RaceDual != "1":
+		return 0
 
 	# already dualclassed
 	Dual = IsDualClassed (actor,0)
 	if Dual[0] > 0:
-		return 1
+		return 0
 
 	DualClassTable = GemRB.LoadTable ("dualclas")
 	ClassName = GetClassRowName(actor)
@@ -581,7 +583,7 @@ def CanDualClass(actor):
 	if KitIndex == 0:
 		ClassTitle = ClassName
 	else:
-		ClassTitle = CommonTables.KitList.GetValue (KitIndex, 0)
+		ClassTitle = CommonTables.KitList.GetValue (KitIndex, 0, GTV_STR)
 	Row = DualClassTable.GetRowIndex (ClassTitle)
 	if Row == None and KitIndex > 0:
 		# retry with the baseclass in case the kit/school is missing (eg. wildmages)
@@ -589,7 +591,7 @@ def CanDualClass(actor):
 
 	if Row == None:
 		print("CannotDualClass: inappropriate starting class")
-		return 1
+		return 0
 
 	# create a lookup table for the DualClassTable columns
 	classes = []
@@ -607,12 +609,12 @@ def CanDualClass(actor):
 	# cannot dc if all the columns of the DualClassTable are 0
 	if Sum == 0:
 		print("CannotDualClass: all the columns of the DualClassTable are 0")
-		return 1
+		return 0
 
 	# if the only choice for dc is already the same as the actors base class
 	if Sum == 1 and ClassName in matches and KitIndex == 0:
 		print("CannotDualClass: the only choice for dc is already the same as the actors base class")
-		return 1
+		return 0
 
 	AlignmentTable = GemRB.LoadTable ("alignmnt")
 	Alignment = GemRB.GetPlayerStat (actor, IE_ALIGNMENT)
@@ -620,15 +622,15 @@ def CanDualClass(actor):
 	AlignmentColName = CommonTables.Aligns.GetValue (AlignmentColName, 4)
 	if AlignmentColName == -1:
 		print("CannotDualClass: extraordinary character alignment")
-		return 1
+		return 0
 	Sum = 0
 	for classy in matches:
-		Sum += AlignmentTable.GetValue (classy, AlignmentColName)
+		Sum += AlignmentTable.GetValue (classy, AlignmentColName, GTV_INT)
 
 	# cannot dc if all the available classes forbid the chars alignment
 	if Sum == 0:
 		print("CannotDualClass: all the available classes forbid the chars alignment")
-		return 1
+		return 0
 
 	# check current class' stat limitations
 	CurrentStatTable = GemRB.LoadTable ("abdcscrq")
@@ -641,7 +643,7 @@ def CanDualClass(actor):
 		name = CurrentStatTable.GetColumnName (stat)
 		if GemRB.GetPlayerStat (actor, SafeStatEval ("IE_" + name[4:]), 1) < minimum:
 			print("CannotDualClass: current class' stat limitations are too big")
-			return 1
+			return 0
 
 	# check new class' stat limitations - make sure there are any good class choices
 	TargetStatTable = GemRB.LoadTable ("abdcdsrq")
@@ -656,16 +658,16 @@ def CanDualClass(actor):
 				break
 	if len(matches) == bad:
 		print("CannotDualClass: no good new class choices")
-		return 1
+		return 0
 
 	# must be at least level 2
 	if GemRB.GetPlayerStat (actor, IE_LEVEL) == 1:
 		print("CannotDualClass: level 1")
-		return 1
-	return 0
+		return 0
+	return 1
 
 def IsWarrior (actor):
-	IsWarrior = CommonTables.ClassSkills.GetValue (GetClassRowName(actor), "NO_PROF")
+	IsWarrior = CommonTables.ClassSkills.GetValue (GetClassRowName(actor), "NO_PROF", GTV_INT)
 
 	# warriors get only a -2 penalty for wielding weapons they are not proficient with
 	# FIXME: make the check more robust, someone may change the value!
@@ -676,7 +678,7 @@ def IsWarrior (actor):
 		DualedFrom = GemRB.GetPlayerStat (actor, IE_MC_FLAGS) & MC_WAS_ANY_CLASS
 		FirstClassIndex = CommonTables.Classes.FindValue ("MC_WAS_ID", DualedFrom)
 		FirstClassName = CommonTables.Classes.GetRowName (FirstClassIndex)
-		OldIsWarrior = CommonTables.ClassSkills.GetValue (FirstClassName, "NO_PROF")
+		OldIsWarrior = CommonTables.ClassSkills.GetValue (FirstClassName, "NO_PROF", GTV_INT)
 		# there are no warrior to warrior dualclasses, so if the previous class was one, the current one certainly isn't
 		if OldIsWarrior == -2:
 			return 0
@@ -846,7 +848,7 @@ def GetACStyleBonus (pc):
 	cdet = GemRB.GetCombatDetails (pc, 0)
 	if cdet["Style"] % 1000 != IE_PROFICIENCYSINGLEWEAPON:
 		return 0
-	return WStyleTable.GetValue (str(stars), "AC")
+	return WStyleTable.GetValue (str(stars), "AC", GTV_INT)
 
 def AddDefaultVoiceSet (VoiceList, Voices):
 	if GameCheck.IsBG1 () or GameCheck.IsBG2 ():

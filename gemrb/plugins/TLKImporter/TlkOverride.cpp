@@ -41,11 +41,11 @@ bool CTlkOverride::Init()
 	CloseResources();
 	//Creation of the headers should be game specific, some games don't have these
 	toh_str = GetAuxHdr(true);
-	if (toh_str == NULL) {
+	if (!toh_str) {
 		return false;
 	}
 	tot_str = GetAuxTlk(true);
-	if (tot_str == NULL) {
+	if (!tot_str) {
 		return false;
 	}
 
@@ -71,15 +71,12 @@ void CTlkOverride::CloseResources()
 {
 	if (toh_str) {
 		delete toh_str;
-		toh_str=NULL;
+		toh_str = nullptr;
 	}
 	if (tot_str) {
 		delete tot_str;
-		tot_str=NULL;
+		tot_str = nullptr;
 	}
-#ifdef CACHE_TLK_OVERRIDE
-	stringmap.clear();
-#endif
 }
 
 //gets the length of a stored string which might span more than one segment
@@ -114,12 +111,12 @@ strret_t CTlkOverride::GetLength(strpos_t offset)
 char* CTlkOverride::GetString(strpos_t offset)
 {
 	if (!tot_str) {
-		return NULL;
+		return nullptr;
 	}
 
 	strret_t length = GetLength(offset);
 	if (length == 0) {
-		return NULL;
+		return nullptr;
 	}
 
 	//assuming char is one byte
@@ -205,13 +202,11 @@ strpos_t CTlkOverride::ClaimFreeSegment()
 		}
 	}
 	ieDword tmp = 0;
-	char buffer[SEGMENT_SIZE];
-	memset(buffer, 0, sizeof(buffer));
 	tot_str->Seek(offset, GEM_STREAM_START);
 	tot_str->WriteDword(tmp);
 	tmp = 0xffffffff;
 	tot_str->WriteDword(tmp);
-	tot_str->Write(buffer, SEGMENT_SIZE);
+	tot_str->WriteFilling(SEGMENT_SIZE);
 	tot_str->WriteDword(tmp);
 
 	//update free segment pointer
@@ -261,8 +256,6 @@ ieStrRef CTlkOverride::GetNewStrRef(ieStrRef strref)
 {
 	EntryType entry;
 
-	memset(&entry,0,sizeof(entry));
-
 	if (strref >= ieStrRef::BIO_START && strref <= ieStrRef::BIO_END) {
 		entry.strref = strref;
 	} else {
@@ -272,7 +265,10 @@ ieStrRef CTlkOverride::GetNewStrRef(ieStrRef strref)
 
 	toh_str->Seek(TOH_HEADER_SIZE + AuxCount * EntryType::FileSize, GEM_STREAM_START);
 	toh_str->WriteStrRef(entry.strref);
-	toh_str->Write(entry.dummy, 20);
+	toh_str->WriteDword(entry.flags);
+	toh_str->WriteResRef(entry.soundRef);
+	toh_str->WriteDword(entry.volumeVariance);
+	toh_str->WriteDword(entry.pitchVariance);
 	toh_str->WriteScalar<strpos_t, int32_t>(entry.offset);
 	AuxCount++;
 	toh_str->Seek(12,GEM_STREAM_START);
@@ -298,21 +294,9 @@ strpos_t CTlkOverride::LocateString(ieStrRef strref)
 	return DataStream::InvalidPos;
 }
 
-//this function handles all of the .tlk override mechanism with caching
-//strings it once found
-//it is possible to turn off caching
 char* CTlkOverride::ResolveAuxString(ieStrRef strref, size_t &Length)
 {
-	char *string;
-
-#ifdef CACHE_TLK_OVERRIDE
-	StringMapType::iterator tmp = stringmap.find(strref);
-	if (tmp!=stringmap.end()) {
-		return CS((*tmp).second);
-	}
-#endif
-
-	string = NULL;
+	char* string = nullptr;
 	strpos_t offset = LocateString(strref);
 	if (offset != DataStream::InvalidPos) {
 		string = GetString(offset);
@@ -324,9 +308,7 @@ char* CTlkOverride::ResolveAuxString(ieStrRef strref, size_t &Length)
 		string = ( char* ) malloc( 1 );
 		string[0] = 0;
 	}
-#ifdef CACHE_TLK_OVERRIDE
-	stringmap[strref]=CS(string);
-#endif
+
 	return string;
 }
 

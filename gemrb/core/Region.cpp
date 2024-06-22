@@ -79,11 +79,24 @@ bool Point::IsInvalid() const noexcept
 	return (x == -1) && (y == -1);
 }
 
-bool Point::isWithinRadius(int r, const Point& p) const noexcept
+bool Point::IsWithinRadius(int r, const Point& p) const noexcept
 {
 	Point d = operator-(p);
 	// sqrt is slow, just check a^2 + b^2 = c^2 <= r^2
 	return (d.x * d.x) + (d.y * d.y) <= r * r;
+}
+
+bool Point::IsWithinEllipse(int r, const Point& p, int a, int b) const noexcept
+{
+	Point d = operator-(p);
+
+	// check ellipse bbox first
+	if (d.x < -r * a || d.x > r * a) return false;
+	if (d.y < -r * b || d.y > r * b) return false;
+
+	// then compare with calculated ellipse distance
+	int ar = b * b * d.x * d.x + a * a * d.y * d.y;
+	return ar <= a * a * b * b * r * r;
 }
 
 Size::Size(int w, int h) noexcept
@@ -197,7 +210,7 @@ Point Region::Intercept(const Point& p) const noexcept
 	if (p.x == mid.x) return Point(p.x, (p.y < min.y) ? min.y : max.y); // vert line
 	if (p.y == mid.y) return Point((p.x < min.x) ? min.x : max.x, p.y); // horiz line
 
-	float m = float(mid.y - p.y) / float(mid.x - p.x);
+	float_t m = float_t(mid.y - p.y) / float_t(mid.x - p.x);
 
 	if (p.x <= mid.x) { // check "left" side
 		int newY = m * (min.x - p.x) + p.y;

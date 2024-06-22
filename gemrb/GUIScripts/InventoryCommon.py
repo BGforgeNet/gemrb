@@ -328,7 +328,7 @@ def DisplayItem (slotItem, itemtype):
 	# description icon (not present in iwds)
 	if not GameCheck.IsIWD1() and not GameCheck.IsIWD2():
 		Button = Window.GetControl (7)
-		Button.SetFlags (IE_GUI_BUTTON_PICTURE | IE_GUI_BUTTON_CENTER_PICTURES | IE_GUI_BUTTON_NO_IMAGE, OP_OR)
+		Button.SetFlags (IE_GUI_BUTTON_PICTURE | (0 if GameCheck.IsBG2EE() else IE_GUI_BUTTON_CENTER_PICTURES) | IE_GUI_BUTTON_NO_IMAGE, OP_OR)
 		if GameCheck.IsPST():
 			Button.SetItemIcon (slotItem["ItemResRef"], 1) # no DescIcon
 		else:
@@ -356,7 +356,7 @@ def DisplayItem (slotItem, itemtype):
 	# The "conversable" bit in PST actually means "usable", eg clot charm
 	# unlike BG2 (which only has the bit set on SW2H14 Lilarcor)
 	# Meanwhile IWD series has the bit set on important quest items
-	# So the widely accepted name of this bit is misleading
+	# So the widely accepted name of this bit is misleading (see use of GFFlags::SELLABLE_CRITS_NO_CONV)
 
 	# There are also items in PST, cube.itm and doll.itm 
 	# that are not flagged usable but still have dialog attached.

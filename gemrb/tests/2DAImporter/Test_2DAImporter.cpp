@@ -26,6 +26,7 @@ namespace GemRB {
 
 static const path_t SAMPLE_FILE = PathJoin("tests", "resources", "2DAImporter", "sample.2da");
 static const path_t ENC_SAMPLE_FILE = PathJoin("tests", "resources", "2DAImporter", "sample_encrypted.2da");
+static const path_t SAMPLE_FILE2 = PathJoin("tests", "resources", "2DAImporter", "sample2.2da");
 
 class p2DAImporter_Test : public testing::TestWithParam<path_t> {
 protected:
@@ -40,7 +41,7 @@ public:
 };
 
 TEST_P(p2DAImporter_Test, GetRowCount) {
-	EXPECT_EQ(unit.GetRowCount(), 7);
+	EXPECT_EQ(unit.GetRowCount(), 8);
 }
 
 TEST_P(p2DAImporter_Test, GetColNamesCount) {
@@ -50,6 +51,7 @@ TEST_P(p2DAImporter_Test, GetColNamesCount) {
 TEST_P(p2DAImporter_Test, GetColumnCount) {
 	EXPECT_EQ(unit.GetColumnCount(), 4);
 	EXPECT_EQ(unit.GetColumnCount(6), 3);
+	EXPECT_EQ(unit.GetColumnCount(7), 2);
 }
 
 TEST_P(p2DAImporter_Test, QueryField) {
@@ -88,7 +90,8 @@ TEST_P(p2DAImporter_Test, GetRowName) {
 	EXPECT_EQ(unit.GetRowName(0), std::string{"STRENGTH"});
 	EXPECT_EQ(unit.GetRowName(6), std::string{"SQUEEZENESS"});
 
-	EXPECT_EQ(unit.GetRowName(7), std::string{});
+	EXPECT_EQ(unit.GetRowName(7), std::string{"MADNESS"});
+	EXPECT_EQ(unit.GetRowName(8), std::string{});
 }
 
 TEST_P(p2DAImporter_Test, FindTableValue) {
@@ -112,5 +115,16 @@ INSTANTIATE_TEST_SUITE_P(
 	p2DAImporter_Test,
 	testing::Values(SAMPLE_FILE, ENC_SAMPLE_FILE)
 );
+
+// single column table
+TEST(p2DAImporter_Test, GetColumnCount2)
+{
+	p2DAImporter unit;
+	auto stream = new FileStream {};
+	stream->Open(SAMPLE_FILE2);
+	unit.Open(std::unique_ptr<DataStream> { stream });
+	EXPECT_EQ(unit.GetColumnCount(), 1);
+	EXPECT_EQ(unit.GetColumnCount(0), 1);
+}
 
 }

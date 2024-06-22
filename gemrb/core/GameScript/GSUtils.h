@@ -22,6 +22,8 @@
 
 #include "Cache.h"
 #include "GameScript/GameScript.h"
+#include "GameScript/Matching.h"
+#include "GameScript/Targets.h"
 #include "GUI/EventMgr.h"
 #include "SrcMgr.h"
 
@@ -112,7 +114,7 @@ int MoveNearerTo(Scriptable *Sender, const Point &p, int distance, int no_releas
 #define BINARY_MORE 10          //left has more bits than right
 #define BINARY_LESS 11          //left has less bits than right
 
-GEM_EXPORT int GetGroup(const Actor *actor);
+GEM_EXPORT GroupType GetGroup(const Actor* actor);
 GEM_EXPORT Actor *GetNearestOf(const Map *map, const Actor *origin, int whoseeswho);
 GEM_EXPORT Actor *GetNearestEnemyOf(const Map *map, const Actor *origin, int whoseeswho);
 GEM_EXPORT void FreeSrc(const SrcVector *poi, const ResRef& key);
@@ -137,7 +139,7 @@ GEM_EXPORT bool VariableExists(const Scriptable *Sender, const StringParam& VarN
 Action* GenerateActionCore(const char *src, const char *str, unsigned short actionID);
 Trigger *GenerateTriggerCore(const char *src, const char *str, int trIndex, int negate);
 GEM_EXPORT unsigned int GetSpellDistance(const ResRef& spellRes, Scriptable* Sender, const Point& target = Point());
-unsigned int GetItemDistance(const ResRef& itemres, int header, double angle);
+unsigned int GetItemDistance(const ResRef& itemres, int header, float_t angle);
 void SetupWishCore(Scriptable *Sender, TableMgr::index_t column, int picks);
 void AmbientActivateCore(const Scriptable *Sender, const Action *parameters, bool flag);
 void SpellCore(Scriptable *Sender, Action *parameters, int flags);

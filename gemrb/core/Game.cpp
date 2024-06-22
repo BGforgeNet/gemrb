@@ -361,9 +361,7 @@ int Game::LeaveParty(Actor* actor, bool returnCriticalItems)
 		SelectActor(PCs[0], true, SELECT_NORMAL);
 	}
 
-	ieDword id = actor->GetGlobalID();
 	for (const auto& pc : PCs) {
-		pc->PCStats->LastLeft = id;
 		if (pc->InParty>actor->InParty) {
 			pc->InParty--;
 		}
@@ -387,7 +385,7 @@ int Game::LeaveParty(Actor* actor, bool returnCriticalItems)
 	if (returnCriticalItems && core->HasFeature(GFFlags::HEAL_ON_100PLUS)) { // TODO: change to !SELLABLE_CRITS_NO_CONV once that is merged
 		slot = actor->inventory.FindItem("", IE_INV_ITEM_CRITICAL);
 		while (slot != -1) {
-			const CREItem* si = actor->inventory.RemoveItem(slot);
+			const CREItem* si = actor->inventory.GetSlotItem(slot);
 			MoveItemCore(actor, PCs[0], si->ItemResRef, 0, 0);
 			slot = actor->inventory.FindItem("", IE_INV_ITEM_CRITICAL);
 		}
@@ -474,14 +472,7 @@ int Game::JoinParty(Actor* actor, int join)
 			}
 		}
 
-		//set the lastjoined trigger
-		if (size) {
-			ieDword id = actor->GetGlobalID();
-			for (size_t i=0;i<size; i++) {
-				Actor *a = GetPC(i, false);
-				a->PCStats->LastJoined = id;
-			}
-		} else {
+		if (!size) {
 			Reputation = actor->GetStat(IE_REPUTATION);
 		}
 		AddTrigger(TriggerEntry(trigger_joins, actor->GetGlobalID()));
@@ -1002,20 +993,20 @@ void Game::DeleteJournalGroup(ieByte group)
 	}
 }
 /* returns true if it modified or added a journal entry */
-bool Game::AddJournalEntry(ieStrRef strRef, ieByte section, ieByte group, ieStrRef feedback)
+bool Game::AddJournalEntry(ieStrRef strRef, JournalSection section, ieByte group, ieStrRef feedback)
 {
 	GAMJournalEntry* je = FindJournalEntry(strRef);
 	if (je) {
 		//don't set this entry again in the same section
-		if (je->Section == section) {
+		if (je->Section == UnderType(section)) {
 			return false;
 		}
-		if ((section == IE_GAM_QUEST_DONE) && group) {
+		if ((section == JournalSection::Solved) && group) {
 			//removing all of this group and adding a new entry
 			DeleteJournalGroup(group);
 		} else {
 			//modifying existing entry
-			je->Section = section;
+			je->Section = UnderType(section);
 			je->Group = group;
 			ieDword chapter = 0;
 			if (!core->HasFeature(GFFlags::NO_NEW_VARIABLES)) {
@@ -1034,7 +1025,7 @@ bool Game::AddJournalEntry(ieStrRef strRef, ieByte section, ieByte group, ieStrR
 	}
 	je->Chapter = (ieByte) chapter;
 	je->unknown09 = 0;
-	je->Section = section;
+	je->Section = UnderType(section);
 	je->Group = group;
 	je->Text = strRef;
 
@@ -1060,13 +1051,13 @@ bool Game::AddJournalEntry(ieStrRef strRef, ieByte section, ieByte group, ieStrR
 		if (core->HasFeature(GFFlags::ONSCREEN_TEXT)) {
 			core->GetGameControl()->SetDisplayText(HCStrings::JournalChange, 30);
 		} else {
-			displaymsg->DisplayMarkupString(msg);
+			displaymsg->DisplayMarkupString(std::move(msg));
 		}
 	}
 	// pst/bg2 also has a sound attached to the base string, so play it manually
 	StringBlock sb = core->strings->GetStringBlock(strJournalChange);
 	if (sb.Sound.IsEmpty()) return true;
-	core->GetAudioDrv()->Play(StringView(sb.Sound), SFX_CHAN_DIALOG);
+	core->GetAudioDrv()->Play(StringView(sb.Sound), SFXChannel::Dialog);
 
 	return true;
 }
@@ -1409,11 +1400,11 @@ void Game::AddGold(int add)
 	}
 }
 
-EffectRef fx_set_regenerating_state_ref = { "State:Regenerating", -1 };
-
 //later this could be more complicated
 void Game::AdvanceTime(ieDword add, bool fatigue)
 {
+	static EffectRef fx_set_regenerating_state_ref = { "State:Regenerating", -1 };
+
 	ieDword h = GameTime/core->Time.hour_size;
 	GameTime+=add;
 	if (h!=GameTime/core->Time.hour_size) {
@@ -1458,7 +1449,8 @@ void Game::AdvanceTime(ieDword add, bool fatigue)
 		// update everyone in party, so they think no time has passed
 		// nobody else, including familiars, gets luck penalties from fatigue
 		for (const auto& pc : PCs) {
-			pc->IncreaseLastRested(add);
+			pc->Timers.lastRested += add;
+			pc->Timers.lastFatigueCheck += add;
 		}
 	}
 
@@ -1540,8 +1532,30 @@ bool Game::EveryoneDead() const
 	return true;
 }
 
-//runs all area scripts
+// determine if we should start some music
+static bool ShouldChangeSong(bool combatChange)
+{
+	bool doChangeSong = false;
+	if (combatChange) {
+		doChangeSong = true;
+	} else if (!core->GetMusicMgr()->IsPlaying()) {
+		// perhaps a StartMusic action stopped the area music?
+		// (we should probably find a less silly way to handle this,
+		// because nothing can ever stop area music now...)
 
+		// Call ChangeSong only once per round in order to prevent spam
+		// calls every tick in areas without music.
+		static unsigned int ticks = 0;
+		ticks++;
+		doChangeSong = ticks >= core->Time.round_size;
+		if (doChangeSong) {
+			ticks = 0;
+		}
+	} // else nothing to change
+	return doChangeSong;
+}
+
+// runs all area scripts
 void Game::UpdateScripts()
 {
 	Update();
@@ -1552,18 +1566,19 @@ void Game::UpdateScripts()
 		Maps[idx]->UpdateScripts();
 	}
 
+	bool combatEnded = false;
 	if (PartyAttack) {
 		//ChangeSong will set the battlesong only if CombatCounter is nonzero
-		CombatCounter=150;
-		ChangeSong(false, true);
-	} else {
-		if (CombatCounter) {
-			CombatCounter--;
-			//Change song if combatcounter went down to 0
-			if (!CombatCounter) {
-				ChangeSong(false, false);
-			}
-		}
+		CombatCounter = 150;
+	} else if (CombatCounter) {
+		CombatCounter--;
+		if (!CombatCounter) combatEnded = true;
+	}
+
+	// change song if we got attacked, combat stopped or perhaps if nothing is playing
+	// hard switch only at combat start
+	if (ShouldChangeSong(PartyAttack || combatEnded)) {
+		ChangeSong(false, PartyAttack);
 	}
 
 	if (StateOverrideTime)
@@ -1578,13 +1593,6 @@ void Game::UpdateScripts()
 		for(unsigned int i=0;i<idx;i++) {
 			DelMap(i, false);
 		}
-	}
-
-	// perhaps a StartMusic action stopped the area music?
-	// (we should probably find a less silly way to handle this,
-	// because nothing can ever stop area music now..)
-	if (!core->GetMusicMgr()->IsPlaying()) {
-		ChangeSong(false,false);
 	}
 
 	//this is used only for the death delay so far
@@ -1686,10 +1694,10 @@ void Game::TextDream()
 }
 
 static EffectRef fx_disable_rest_ref = { "DisableRest", -1 };
-bool Game::CanPartyRest(int checks, ieStrRef* err) const
+bool Game::CanPartyRest(RestChecks checks, ieStrRef* err) const
 {
-	if (checks == REST_NOCHECKS) return true;
-	
+	if (checks == RestChecks::NoCheck) return true;
+
 	if (!err) {
 		static ieStrRef noerr = ieStrRef::INVALID;
 		err = &noerr;
@@ -1705,7 +1713,7 @@ bool Game::CanPartyRest(int checks, ieStrRef* err) const
 		}
 	}
 
-	if (checks & REST_CONTROL) {
+	if (checks & RestChecks::InControl) {
 		for (const auto& pc : PCs) {
 			if (pc->GetStat(IE_STATE_ID) & STATE_MINDLESS) {
 				// You cannot rest at this time because you do not have control of all your party members
@@ -1719,7 +1727,7 @@ bool Game::CanPartyRest(int checks, ieStrRef* err) const
 	assert(leader);
 	const Map *area = leader->GetCurrentArea();
 	//we let them rest if someone is paralyzed, but the others gather around
-	if (checks & REST_SCATTER) {
+	if (checks & RestChecks::Scattered) {
 		if (!EveryoneNearPoint(area, leader->Pos, 0)) {
 			//party too scattered
 			*err = DisplayMessage::GetStringReference(HCStrings::Scattered);
@@ -1727,7 +1735,7 @@ bool Game::CanPartyRest(int checks, ieStrRef* err) const
 		}
 	}
 
-	if (checks & REST_CRITTER) {
+	if (checks & RestChecks::Enemies) {
 		//don't allow resting while in combat
 		if (AnyPCInCombat()) {
 			*err = DisplayMessage::GetStringReference(HCStrings::CantRestMonsters);
@@ -1741,7 +1749,7 @@ bool Game::CanPartyRest(int checks, ieStrRef* err) const
 	}
 
 	//rest check, if PartyRested should be set, area should return true
-	if (checks & REST_AREA) {
+	if (checks & RestChecks::Area) {
 		//you cannot rest here
 		if (area->AreaFlags & AF_NOSAVE) {
 			*err = DisplayMessage::GetStringReference(HCStrings::MayNotRest);
@@ -1797,7 +1805,7 @@ bool Game::CanPartyRest(int checks, ieStrRef* err) const
 //    1-7: dream selected from a fixed list
 // hp: how much hp the rest will heal
 // returns true if a cutscene dream is about to be played
-bool Game::RestParty(int checks, int dream, int hp)
+bool Game::RestParty(RestChecks checks, int dream, int hp)
 {
 	if (!CanPartyRest(checks)) {
 		return false;
@@ -1808,13 +1816,13 @@ bool Game::RestParty(int checks, int dream, int hp)
 	// TODO: implement "rest until healed", it's an option in some games
 	int hours = 8;
 	int hoursLeft = 0;
-	if (checks & REST_AREA) {
+	if (checks & RestChecks::Area) {
 		//area encounters
 		// also advances gametime (so partial rest is possible)
-		Trigger* parameters = new Trigger;
-		parameters->int0Parameter = 0; // TIMEOFDAY_DAY, with a slight preference for daytime interrupts
-		hoursLeft = area->CheckRestInterruptsAndPassTime(leader->Pos, hours, GameScript::TimeOfDay(nullptr, parameters));
-		delete parameters;
+		Trigger parameters;
+		parameters.int0Parameter = 0; // TIMEOFDAY_DAY, with a slight preference for daytime interrupts
+		hoursLeft = area->CheckRestInterruptsAndPassTime(leader->Pos, hours, GameScript::TimeOfDay(nullptr, &parameters));
+
 		if (hoursLeft) {
 			// partial rest only, so adjust the parameters for the loop below
 			if (hp) {
@@ -2157,11 +2165,7 @@ void Game::ChangeSong(bool always, bool force) const
 		Song = SONG_BATTLE;
 		BattleSong++;
 	} else {
-		//will select SONG_DAY or SONG_NIGHT
-		Trigger* parameters = new Trigger;
-		parameters->int0Parameter = 0; // TIMEOFDAY_DAY, while dusk, dawn and night we treat as night
-		Song = int(GameScript::TimeOfDay(nullptr, parameters) != 1);
-		delete parameters;
+		Song = 0xffff; // will select SONG_DAY or SONG_NIGHT
 		BattleSong = 0;
 	}
 	//area may override the song played (stick in battlemusic)
@@ -2220,27 +2224,36 @@ void Game::StartRainOrSnow(bool conditional, ieWord w)
 		if (WeatherBits&WB_INCREASESTORM) {
 			//already raining
 			if (GameTime&1) {
-				core->PlaySound(DS_LIGHTNING1, SFX_CHAN_AREA_AMB);
+				core->PlaySound(DS_LIGHTNING1, SFXChannel::MainAmbient);
 			} else {
-				core->PlaySound(DS_LIGHTNING2, SFX_CHAN_AREA_AMB);
+				core->PlaySound(DS_LIGHTNING2, SFXChannel::MainAmbient);
 			}
 		} else {
 			//start raining (far)
-			core->PlaySound(DS_LIGHTNING3, SFX_CHAN_AREA_AMB);
+			core->PlaySound(DS_LIGHTNING3, SFXChannel::MainAmbient);
 		}
 	}
 	if (w&WB_SNOW) {
-		core->PlaySound(DS_SNOW, SFX_CHAN_AREA_AMB);
+		core->PlaySound(DS_SNOW, SFXChannel::MainAmbient);
 		weather->SetType(SP_TYPE_POINT, SP_PATH_FLIT, SP_SPAWN_SOME);
 		weather->SetPhase(P_GROW);
-		weather->SetColor(SPARK_COLOR_WHITE);
+		weather->SetColorIndex(SPARK_COLOR_WHITE);
 		return;
 	}
 	if (w&WB_RAIN) {
-		core->PlaySound(DS_RAIN, SFX_CHAN_AREA_AMB);
+		core->PlaySound(DS_RAIN, SFXChannel::MainAmbient);
 		weather->SetType(SP_TYPE_LINE, SP_PATH_RAIN, SP_SPAWN_SOME);
 		weather->SetPhase(P_GROW);
-		weather->SetColor(SPARK_COLOR_STONE);
+		// colors re-d from iwd2
+		// during lightning it's pure white
+		Color rainColor(110, 110, 110, 0xff); // default and day, 7-20
+		int hour = core->Time.GetHour(GameTime);
+		if (hour == 6 || hour == 21) { // same for dusk and dawn
+			rainColor = Color(90, 90, 100, 0xff);
+		} else if (hour < 6 || hour > 21) {
+			rainColor = Color(70, 70, 90, 0xff);
+		}
+		weather->SetColor(rainColor);
 		return;
 	}
 	weather->SetPhase(P_FADE);
@@ -2435,6 +2448,7 @@ bool Game::CheckPartyBanter() const
 void Game::CheckAreaComment()
 {
 	if (CombatCounter) return;
+	if (core->InCutSceneMode()) return;
 	if (GameTime % 600 != 0) return;
 	if (RAND(1, 100) > 16) return; // yep, the original used 16 %
 
@@ -2488,6 +2502,19 @@ void Game::MoveFamiliars(const ResRef& targetArea, const Point& targetPoint, int
 			MoveBetweenAreasCore(npc, targetArea, targetPoint, orientation, true);
 		}
 	}
+}
+
+bool Game::IsTargeted(ieDword gid) const
+{
+	for (const auto& pc : PCs) {
+		if (pc->objects.LastTarget == gid) return true;
+	}
+	// check also familiars and summons
+	for (const auto& npc : NPCs) {
+		if (npc->GetStat(IE_EA) > EA_CONTROLLABLE) continue;
+		if (npc->objects.LastTarget == gid) return true;
+	}
+	return false;
 }
 
 }

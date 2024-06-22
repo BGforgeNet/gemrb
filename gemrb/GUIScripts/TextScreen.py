@@ -19,7 +19,7 @@
 
 import GemRB
 from ie_restype import RES_2DA
-from ie_sounds import CHAN_GUI, SND_SPEECH
+from ie_sounds import CHAN_GUI, SND_SPEECH, GEM_SND_VOL_AMBIENTS
 from GUIDefines import *
 import GameCheck
 
@@ -99,10 +99,12 @@ def StartTextScreen ():
 		ID = GemRB.GetGameVar("CHAPTER") & 0x7fffffff
 		Chapter = ID + 1
 
+	# Textscreen should always stop currently playing music before starting
+	# to play any chapter music.
+	GemRB.HardEndPL ()
+
 	if MusicName != "*":
 		GemRB.LoadMusicPL (MusicName + ".mus")
-	else:
-		GemRB.HardEndPL ()
 
 	TextScreen = GemRB.LoadWindow (ID, "GUICHAP")
 	TextArea = TextScreen.GetControl (2)
@@ -172,7 +174,7 @@ def ToggleAmbients (state):
 		AmbientVolume = GemRB.GetVar ("Volume Ambients")
 		GemRB.SetVar ("Volume Ambients", 0)
 
-	GemRB.UpdateAmbientsVolume ()
+	GemRB.UpdateVolume (GEM_SND_VOL_AMBIENTS)
 
 def EndTextScreen ():
 	global TextScreen, TableName

@@ -531,7 +531,7 @@ void AREImporter::GetSongs(DataStream* str, Map* map, std::vector<Ambient*>& amb
 			ambi->appearance ^= dayBits; // night: bits 0-5 + 19-23, [dusk till dawn]
 		}
 	}
-	// bgt ar7300 has a nigth ambient only in the first slot
+	// bgt ar7300 has a night ambient only in the first slot
 	if (ambi) {
 		ambients.push_back(ambi);
 	}
@@ -550,9 +550,9 @@ void AREImporter::GetRestHeader(DataStream* str, Map* map) const
 		map->RestHeader.CreatureNum = MAX_RESCOUNT;
 	}
 	str->ReadWord(map->RestHeader.Difficulty); // difficulty?
-	str->ReadDword(map->RestHeader.sduration); // spawn duration, lifespan
-	str->ReadWord(map->RestHeader.rwdist); // random walk distance, hunting range
-	str->ReadWord(map->RestHeader.owdist); // other walk distance, follow range
+	str->ReadDword(map->RestHeader.Duration);
+	str->ReadWord(map->RestHeader.RandomWalkDistance);
+	str->ReadWord(map->RestHeader.FollowDistance);
 	str->ReadWord(map->RestHeader.Maximum); // maximum number of creatures
 	str->ReadWord(map->RestHeader.Enabled);
 	str->ReadWord(map->RestHeader.DayChance);
@@ -671,7 +671,9 @@ void AREImporter::GetInfoPoint(DataStream* str, int idx, Map* map) const
 		for (int x = 0; x < vertexCount; x++) {
 			str->ReadPoint(points[x]);
 		}
-		auto poly = std::make_shared<Gem_Polygon>(std::move(points), &bbox);
+		// recalculate the bbox if it was not provided
+		auto poly = std::make_shared<Gem_Polygon>(std::move(points), bbox.size.IsInvalid() ? nullptr : &bbox);
+		bbox = poly->BBox;
 		ip = map->TMap->AddInfoPoint(ipName, ipType, poly);
 	}
 
@@ -1173,7 +1175,7 @@ bool AREImporter::GetActor(DataStream* str, PluginHolder<ActorMgr> actorMgr, Map
 	}
 	act->SetOrientation(ClampToOrientation(orientation), false);
 	act->TalkCount = talkCount;
-	act->RemovalTime = removalTime;
+	act->Timers.removalTime = removalTime;
 	act->RefreshEffects();
 	return true;
 }
@@ -2187,7 +2189,7 @@ int AREImporter::PutActors(DataStream *stream, const Map *map) const
 		stream->WriteDword(0); //actor animation, unused
 		stream->WriteWord(ac->GetOrientation());
 		stream->WriteWord(0); //unknown
-		stream->WriteDword(ac->RemovalTime);
+		stream->WriteDword(ac->Timers.removalTime);
 		stream->WriteWord(ac->maxWalkDistance);
 		stream->WriteWord(0); //more unknowns
 		stream->WriteDword(ac->appearance);
@@ -2490,9 +2492,9 @@ int AREImporter::PutRestHeader(DataStream *stream, const Map *map) const
 	}
 	stream->WriteWord(map->RestHeader.CreatureNum);
 	stream->WriteWord(map->RestHeader.Difficulty);
-	stream->WriteDword(map->RestHeader.sduration);
-	stream->WriteWord(map->RestHeader.rwdist);
-	stream->WriteWord(map->RestHeader.owdist);
+	stream->WriteDword(map->RestHeader.Duration);
+	stream->WriteWord(map->RestHeader.RandomWalkDistance);
+	stream->WriteWord(map->RestHeader.FollowDistance);
 	stream->WriteWord(map->RestHeader.Maximum);
 	stream->WriteWord(map->RestHeader.Enabled);
 	stream->WriteWord(map->RestHeader.DayChance);

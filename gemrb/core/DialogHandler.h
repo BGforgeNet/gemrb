@@ -24,6 +24,8 @@
 #include "exports.h"
 
 #include "Dialog.h"
+#include "Game.h"
+
 #include "Scriptable/Scriptable.h"
 
 namespace GemRB {
@@ -53,6 +55,8 @@ private:
 	/** this function safely retrieves an Actor by ID */
 	Actor *GetLocalActorByGlobalID(ieDword ID);
 	void UpdateJournalForTransition(const DialogTransition* tr) const;
+	void DialogChooseInitial(Scriptable* target, Actor* tgta) const;
+	int DialogChooseTransition(unsigned int choose, Scriptable*& target, Actor*& tgta, Actor* speaker);
 
 	DialogState* ds = nullptr;
 	Dialog* dlg = nullptr;
@@ -63,6 +67,8 @@ private:
 
 	int initialState = -1;
 	Point prevViewPortLoc;
+
+	std::array<JournalSection, 4> sectionMap {};
 };
 
 }

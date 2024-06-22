@@ -225,7 +225,7 @@ void GameScript::RemoveFamiliar(Scriptable* Sender, Action* /*parameters*/)
 	actor->SetBase(IE_EA, EA_NEUTRAL);
 }
 
-void GameScript::ChangeAllegiance(Scriptable* Sender, Action* parameters)
+void GameScript::ChangeEnemyAlly(Scriptable* Sender, Action* parameters)
 {
 	Scriptable *scr = Sender;
 	if (parameters->objects[1]) {
@@ -1225,7 +1225,7 @@ void GameScript::RunToPointNoRecticle(Scriptable* Sender, Action* parameters)
 		return;
 	}
 	if (!actor->InMove() || actor->Destination != parameters->pointParameter) {
-		actor->SetOrientation(parameters->pointParameter, actor->Pos, false);
+		actor->SetOrientation(actor->Pos, parameters->pointParameter, false);
 		actor->WalkTo(parameters->pointParameter, IF_NORETICLE | IF_RUNNING);
 	}
 	if (!actor->InMove()) {
@@ -1243,7 +1243,7 @@ void GameScript::RunToPoint(Scriptable* Sender, Action* parameters)
 		return;
 	}
 	if (!actor->InMove() || actor->Destination != parameters->pointParameter) {
-		actor->SetOrientation(parameters->pointParameter, actor->Pos, false);
+		actor->SetOrientation(actor->Pos, parameters->pointParameter, false);
 		actor->WalkTo(parameters->pointParameter, IF_RUNNING);
 	}
 	if (!actor->InMove()) {
@@ -1797,7 +1797,7 @@ void GameScript::FaceObject(Scriptable* Sender, Action* parameters)
 		Sender->ReleaseCurrentAction();
 		return;
 	}
-	actor->SetOrientation(target->Pos, actor->Pos, false);
+	actor->SetOrientation(actor->Pos, target->Pos, false);
 	actor->SetWait( 1 );
 	Sender->ReleaseCurrentAction(); // todo, blocking?
 }
@@ -1815,7 +1815,7 @@ void GameScript::FaceSavedLocation(Scriptable* Sender, Action* parameters)
 	}
 	Point p = CheckPointVariable(target, parameters->string0Parameter);
 
-	actor->SetOrientation(p, actor->Pos, false);
+	actor->SetOrientation(actor->Pos, p, false);
 	actor->SetWait( 1 );
 	Sender->ReleaseCurrentAction(); // todo, blocking?
 }
@@ -1882,7 +1882,7 @@ void GameScript::StartCombatCounter(Scriptable* Sender, Action* /*parameters*/)
 {
 	const Map *map = Sender->GetCurrentArea();
 	if (!map) return;
-	map->PlayAreaSong(3, true, true);
+	map->PlayAreaSong(SONG_BATTLE, true, true);
 }
 
 /*iwd2 can set an areasong slot*/
@@ -1900,20 +1900,20 @@ void GameScript::SetMusic(Scriptable* Sender, Action* parameters)
 void GameScript::PlaySound(Scriptable* Sender, Action* parameters)
 {
 	Log(MESSAGE, "Actions", "PlaySound({})", parameters->string0Parameter);
-	core->GetAudioDrv()->Play(parameters->string0Parameter, SFX_CHAN_CHAR0, Sender->Pos, parameters->int0Parameter ? GEM_SND_SPEECH : 0);
+	core->GetAudioDrv()->Play(parameters->string0Parameter, SFXChannel::Char0, Sender->Pos, parameters->int0Parameter ? GEM_SND_SPEECH : 0);
 }
 
 void GameScript::PlaySoundPoint(Scriptable* /*Sender*/, Action* parameters)
 {
 	Log(MESSAGE, "Actions", "PlaySound({})", parameters->string0Parameter);
-	core->GetAudioDrv()->Play(parameters->string0Parameter, SFX_CHAN_ACTIONS,
+	core->GetAudioDrv()->Play(parameters->string0Parameter, SFXChannel::Actions,
 		parameters->pointParameter, GEM_SND_SPATIAL);
 }
 
 void GameScript::PlaySoundNotRanged(Scriptable* /*Sender*/, Action* parameters)
 {
 	Log(MESSAGE, "Actions", "PlaySound({})", parameters->string0Parameter);
-	core->GetAudioDrv()->Play(parameters->string0Parameter, SFX_CHAN_ACTIONS);
+	core->GetAudioDrv()->Play(parameters->string0Parameter, SFXChannel::Actions);
 }
 
 void GameScript::Continue(Scriptable* /*Sender*/, Action* /*parameters*/)
@@ -2466,7 +2466,7 @@ void GameScript::RemoveTraps(Scriptable* Sender, Action* parameters)
 		Sender->ReleaseCurrentAction();
 		return;
 	}
-	actor->SetOrientation(*otherp, actor->Pos, false);
+	actor->SetOrientation(actor->Pos, *otherp, false);
 	if (distance <= MAX_OPERATING_DISTANCE) {
 		if (flags) {
 			switch(type) {
@@ -2540,7 +2540,7 @@ void GameScript::PickLock(Scriptable* Sender, Action* parameters)
 		return;
 	}
 
-	actor->SetOrientation(*otherp, actor->Pos, false);
+	actor->SetOrientation(actor->Pos, *otherp, false);
 	if (distance <= MAX_OPERATING_DISTANCE) {
 		if (flags) {
 			if (type==ST_DOOR) {
@@ -2617,13 +2617,13 @@ void GameScript::ToggleDoor(Scriptable* Sender, Action* /*parameters*/)
 	Point *otherp = door->toOpen+1;
 	distance = FindNearPoint( Sender, p, otherp);
 	if (distance <= MAX_OPERATING_DISTANCE) {
-		actor->SetOrientation(*otherp, actor->Pos, false);
+		actor->SetOrientation(actor->Pos, *otherp, false);
 		if (!door->TryUnlock(actor)) {
 			displaymsg->DisplayMsgAtLocation(HCStrings::DoorLocked, FT_MISC, door, actor);
 			door->AddTrigger(TriggerEntry(trigger_failedtoopen, actor->GetGlobalID()));
 
 			//playsound unsuccessful opening of door
-			core->PlaySound(door->IsOpen() ? DS_CLOSE_FAIL : DS_OPEN_FAIL, SFX_CHAN_ACTIONS, *otherp, GEM_SND_SPATIAL);
+			core->PlaySound(door->IsOpen() ? DS_CLOSE_FAIL : DS_OPEN_FAIL, SFXChannel::Actions, *otherp, GEM_SND_SPATIAL);
 			Sender->ReleaseCurrentAction();
 			actor->TargetDoor = 0;
 			return; //don't open door
@@ -2946,7 +2946,7 @@ void GameScript::AddXPObject(Scriptable* Sender, Action* parameters)
 
 	//normally the second parameter is 0, but it may be handy to have control over that (See SX_* flags)
 	actor->AddExperience(xp, parameters->int1Parameter);
-	core->PlaySound(DS_GOTXP, SFX_CHAN_ACTIONS);
+	core->PlaySound(DS_GOTXP, SFXChannel::Actions);
 }
 
 void GameScript::AddXP2DA(Scriptable* /*Sender*/, Action* parameters)
@@ -2968,13 +2968,13 @@ void GameScript::AddXPWorth(Scriptable* Sender, Action* parameters)
 	int xp = actor->GetStat(IE_XPVALUE); // I guess
 	if (parameters->int0Parameter) actor->SetBase(IE_XPVALUE, 0);
 	core->GetGame()->ShareXP(xp, SX_DIVIDE);
-	core->PlaySound(DS_GOTXP, SFX_CHAN_ACTIONS);
+	core->PlaySound(DS_GOTXP, SFXChannel::Actions);
 }
 
 void GameScript::AddExperienceParty(Scriptable* /*Sender*/, Action* parameters)
 {
 	core->GetGame()->ShareXP(parameters->int0Parameter, SX_DIVIDE);
-	core->PlaySound(DS_GOTXP, SFX_CHAN_ACTIONS);
+	core->PlaySound(DS_GOTXP, SFXChannel::Actions);
 }
 
 //this needs moncrate.2da, but otherwise independent from GFFlags::CHALLENGERATING
@@ -2987,7 +2987,7 @@ void GameScript::AddExperiencePartyGlobal(Scriptable* Sender, Action* parameters
 {
 	ieDword xp = CheckVariable( Sender, parameters->string0Parameter, parameters->string1Parameter );
 	core->GetGame()->ShareXP(xp, SX_DIVIDE);
-	core->PlaySound(DS_GOTXP, SFX_CHAN_ACTIONS);
+	core->PlaySound(DS_GOTXP, SFXChannel::Actions);
 }
 
 // these two didn't work in the original (bg2, ee) and were unused
@@ -3795,15 +3795,14 @@ void GameScript::IncrementExtraProficiency(Scriptable* Sender, Action* parameter
 //the third parameter is a GemRB extension
 void GameScript::AddJournalEntry(Scriptable* /*Sender*/, Action* parameters)
 {
-	core->GetGame()->AddJournalEntry(ieStrRef(parameters->int0Parameter), (ieByte) parameters->int1Parameter, (ieByte) parameters->int2Parameter);
+	core->GetGame()->AddJournalEntry(ieStrRef(parameters->int0Parameter), (JournalSection) parameters->int1Parameter, (ieByte) parameters->int2Parameter);
 }
 
 void GameScript::SetQuestDone(Scriptable* /*Sender*/, Action* parameters)
 {
 	Game *game = core->GetGame();
 	game->DeleteJournalEntry(ieStrRef(parameters->int0Parameter));
-	game->AddJournalEntry(ieStrRef(parameters->int0Parameter), IE_GAM_QUEST_DONE, (ieByte) parameters->int2Parameter);
-
+	game->AddJournalEntry(ieStrRef(parameters->int0Parameter), JournalSection::Solved, (ieByte) parameters->int2Parameter);
 }
 
 void GameScript::RemoveJournalEntry(Scriptable* /*Sender*/, Action* parameters)
@@ -5468,7 +5467,7 @@ void GameScript::DayNight(Scriptable* /*Sender*/, Action* parameters)
 void GameScript::RestParty(Scriptable* Sender, Action* parameters)
 {
 	Game *game = core->GetGame();
-	game->RestParty(REST_NOCHECKS, parameters->int0Parameter, parameters->int1Parameter);
+	game->RestParty(RestChecks::NoCheck, parameters->int0Parameter, parameters->int1Parameter);
 	Sender->ReleaseCurrentAction();
 }
 
@@ -5501,7 +5500,7 @@ void GameScript::RestNoSpells(Scriptable* Sender, Action* /*parameters*/)
 //this most likely advances time and heals whole party
 void GameScript::RestUntilHealed(Scriptable* Sender, Action* /*parameters*/)
 {
-	core->GetGame()->RestParty(REST_NOCHECKS, 0, 0);
+	core->GetGame()->RestParty(RestChecks::NoCheck, 0, 0);
 	Sender->ReleaseCurrentAction();
 }
 
@@ -6146,6 +6145,26 @@ void GameScript::SaveGame(Scriptable* /*Sender*/, Action* parameters)
 	}
 }
 
+static bool FindEscapePosition(Point& pos, const Scriptable* escapee)
+{
+	const Map* map = escapee->GetCurrentArea();
+	if (!map) {
+		return false;
+	}
+
+	const auto found = map->TMap->AdjustNearestTravel(pos);
+	Region vp = core->GetGameControl()->Viewport();
+	if (!found && vp.PointInside(pos)) {
+		// no travel region found, so look for alternative
+		// we don't need to bother if the actor isn't visible — immediate selfdestruction is fine
+		// the obvious direction would be to the closest map's edge, but that's not what the originals did
+		// it's on a timer, so we can simplify and direct to viewport edge (or only if it's closer)
+		// ... but even this simpler approach works good enough
+		pos = vp.Intercept(pos);
+	}
+	return true;
+}
+
 /*EscapeAreaMove(S:Area*,I:X*,I:Y*,I:Face*)*/
 void GameScript::EscapeArea(Scriptable* Sender, Action* parameters)
 {
@@ -6155,14 +6174,12 @@ void GameScript::EscapeArea(Scriptable* Sender, Action* parameters)
 		Sender->ReleaseCurrentAction();
 		return;
 	}
-	Map *map = Sender->GetCurrentArea();
-	if (!map) {
+
+	Point p = Sender->Pos;
+	if (!FindEscapePosition(p, Sender)) {
 		Sender->ReleaseCurrentAction();
 		return;
 	}
-
-	Point p = Sender->Pos;
-	map->TMap->AdjustNearestTravel(p);
 
 	if (!parameters->resref0Parameter.IsEmpty()) {
 		Point q(parameters->int0Parameter, parameters->int1Parameter);
@@ -6182,14 +6199,12 @@ void GameScript::EscapeAreaNoSee(Scriptable* Sender, Action* parameters)
 		Sender->ReleaseCurrentAction();
 		return;
 	}
-	Map *map = Sender->GetCurrentArea();
-	if (!map) {
+
+	Point p = Sender->Pos;
+	if (!FindEscapePosition(p, Sender)) {
 		Sender->ReleaseCurrentAction();
 		return;
 	}
-
-	Point p = Sender->Pos;
-	map->TMap->AdjustNearestTravel(p);
 
 	if (!parameters->resref0Parameter.IsEmpty()) {
 		Point q(parameters->int0Parameter, parameters->int1Parameter);
@@ -6198,7 +6213,6 @@ void GameScript::EscapeAreaNoSee(Scriptable* Sender, Action* parameters)
 		EscapeAreaCore(Sender, p, parameters->resref0Parameter, p, EscapeArea::DestroyNoSee, parameters->int0Parameter);
 	}
 	//EscapeAreaCore will do its ReleaseCurrentAction
-	//Sender->ReleaseCurrentAction();
 }
 
 void GameScript::EscapeAreaDestroy(Scriptable* Sender, Action* parameters)
@@ -6207,15 +6221,13 @@ void GameScript::EscapeAreaDestroy(Scriptable* Sender, Action* parameters)
 		Sender->ReleaseCurrentAction();
 		return;
 	}
-	Map *map = Sender->GetCurrentArea();
-	if (!map) {
+
+	Point p = Sender->Pos;
+	if (!FindEscapePosition(p, Sender)) {
 		Sender->ReleaseCurrentAction();
 		return;
 	}
 
-	//find nearest exit
-	Point p = Sender->Pos;
-	map->TMap->AdjustNearestTravel(p);
 	//EscapeAreaCore will do its ReleaseCurrentAction
 	EscapeAreaCore(Sender, p, parameters->resref0Parameter, p, EscapeArea::Destroy, parameters->int0Parameter);
 }
@@ -6718,21 +6730,25 @@ void GameScript::SelectWeaponAbility(Scriptable* Sender, Action* parameters)
 	if (!scr) {
 		return;
 	}
+
+	// weapon
 	int slot = parameters->int0Parameter;
-	int wslot = Inventory::GetWeaponSlot();
-	//weapon
 	if (core->QuerySlotType(slot)&SLOT_WEAPON) {
-		slot-=wslot;
+		slot = Inventory::GetWeaponQuickSlot(slot);
 		if (slot<0 || slot>=MAX_QUICKWEAPONSLOT) {
 			return;
 		}
+		// nothing to do? Then don't disrupt by reequipping
+		if (slot == scr->inventory.GetEquipped() && parameters->int1Parameter == scr->inventory.GetEquippedHeader()) return;
+
 		scr->SetEquippedQuickSlot(slot, parameters->int1Parameter);
+		core->SetEventFlag(EF_ACTION);
 		return;
 	}
+
 	//quick item
-	wslot = Inventory::GetQuickSlot();
 	if (core->QuerySlotType(slot)&SLOT_ITEM) {
-		slot-=wslot;
+		slot -= Inventory::GetQuickSlot();
 		if (slot<0 || slot>=MAX_QUICKITEMSLOT) {
 			return;
 		}
@@ -6750,7 +6766,10 @@ void GameScript::UseItem(Scriptable* Sender, Action* parameters)
 		return;
 	}
 	const Scriptable* tar = GetStoredActorFromObject(Sender, parameters->objects[1]);
-	if (!tar) {
+	const Actor* target = Scriptable::As<const Actor>(tar);
+	if (!tar ||
+	    (tar->GetInternalFlag() & (IF_ACTIVE | IF_VISIBLE)) != (IF_ACTIVE | IF_VISIBLE) ||
+	    (target && target->GetStat(IE_AVATARREMOVAL))) {
 		Sender->ReleaseCurrentAction();
 		return;
 	}
@@ -6794,18 +6813,18 @@ void GameScript::UseItem(Scriptable* Sender, Action* parameters)
 	}
 
 	// make sure we can still see the target
-	const Actor* target = Scriptable::As<const Actor>(tar);
 	const Item* itm = gamedata->GetItem(itemres, true);
-	if (Sender != tar && !(itm->Flags & IE_ITEM_NO_INVIS) && target->IsInvisibleTo(Sender)) {
+	if (Sender != tar && !(itm->Flags & IE_ITEM_NO_INVIS) && target && target->IsInvisibleTo(Sender)) {
 		Sender->ReleaseCurrentAction();
 		Sender->AddTrigger(TriggerEntry(trigger_targetunreachable, tar->GetGlobalID()));
+		displaymsg->DisplayConstantStringName(HCStrings::NoSeeNoCast, GUIColors::RED, Sender);
 		core->Autopause(AUTOPAUSE::NOTARGET, Sender);
 		gamedata->FreeItem(itm, itemres, false);
 		return;
 	}
 	gamedata->FreeItem(itm, itemres, false);
 
-	double angle = AngleFromPoints(Sender->Pos, tar->Pos);
+	float_t angle = AngleFromPoints(Sender->Pos, tar->Pos);
 	unsigned int dist = GetItemDistance(itemres, header, angle);
 	if (PersonalDistance(Sender, tar) > dist) {
 		MoveNearerTo(Sender, tar, dist);
@@ -6855,7 +6874,7 @@ void GameScript::UseItemPoint(Scriptable* Sender, Action* parameters)
 		return;
 	}
 
-	double angle = AngleFromPoints(Sender->Pos, parameters->pointParameter);
+	float_t angle = AngleFromPoints(Sender->Pos, parameters->pointParameter);
 	unsigned int dist = GetItemDistance(itemres, header, angle);
 	if (PersonalDistance(parameters->pointParameter, Sender) > dist) {
 		MoveNearerTo(Sender, parameters->pointParameter, dist, 0);
@@ -7336,17 +7355,17 @@ void GameScript::SpellCastEffect(Scriptable* Sender, Action* parameters)
 		return;
 	}
 
-	unsigned int channel = SFX_CHAN_DIALOG;
+	SFXChannel channel = SFXChannel::Dialog;
 	if (actor->InParty > 0) {
-		channel = SFX_CHAN_CHAR0 + actor->InParty - 1;
+		channel = SFXChannel(ieByte(SFXChannel::Char0) + actor->InParty - 1);
 	} else if (actor->GetStat(IE_EA) >= EA_EVILCUTOFF) {
-		channel = SFX_CHAN_MONSTER;
+		channel = SFXChannel::Monster;
 	}
 
 	// voice
 	core->GetAudioDrv()->Play(parameters->string0Parameter, channel, Sender->Pos, GEM_SND_SPEECH | GEM_SND_QUEUE | GEM_SND_SPATIAL);
 	// starting sound, played at the same time, but on a different channel
-	core->GetAudioDrv()->Play(parameters->string1Parameter, SFX_CHAN_CASTING, Sender->Pos, GEM_SND_QUEUE | GEM_SND_SPATIAL);
+	core->GetAudioDrv()->Play(parameters->string1Parameter, SFXChannel::Casting, Sender->Pos, GEM_SND_QUEUE | GEM_SND_SPATIAL);
 	// NOTE: only a few uses have also an ending sound that plays when the effect ends (also stopping Sound1)
 	// but we don't even read all three string parameters, as Action stores just two
 	// seems like a waste of memory to impose it on everyone, just for these few users

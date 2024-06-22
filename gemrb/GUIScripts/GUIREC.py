@@ -30,7 +30,7 @@ import DualClass
 import GUIRECCommon
 import PartyReform
 from GUIDefines import *
-from GUICommonWindows import CreateTopWinLoader, ToggleWindow, OpenWindowOnce, DefaultWinPos
+from GUICommonWindows import CreateTopWinLoader, ToggleWindow, OpenWindowOnce
 from ie_stats import *
 from ie_restype import *
 ###################################################
@@ -102,9 +102,9 @@ def UpdateRecordsWindow (Window):
 	# dual-classable
 	Button = Window.GetControl (0)
 	if GUICommon.CanDualClass (pc):
-		Button.SetState (IE_GUI_BUTTON_DISABLED)
-	else:
 		Button.SetState (IE_GUI_BUTTON_ENABLED)
+	else:
+		Button.SetState (IE_GUI_BUTTON_DISABLED)
 
 	# levelup
 	Button = Window.GetControl (37)
@@ -218,8 +218,8 @@ def UpdateRecordsWindow (Window):
 
 	return
 
-ToggleRecordsWindow = CreateTopWinLoader(2, "GUIREC", ToggleWindow, InitRecordsWindow, UpdateRecordsWindow, DefaultWinPos, True)
-OpenRecordsWindow = CreateTopWinLoader(2, "GUIREC", OpenWindowOnce, InitRecordsWindow, UpdateRecordsWindow, DefaultWinPos, True)
+ToggleRecordsWindow = CreateTopWinLoader(2, "GUIREC", ToggleWindow, InitRecordsWindow, UpdateRecordsWindow, True)
+OpenRecordsWindow = CreateTopWinLoader(2, "GUIREC", OpenWindowOnce, InitRecordsWindow, UpdateRecordsWindow, True)
 
 #original returns to game before continuing...
 def OpenRecReformPartyWindow ():
@@ -259,7 +259,7 @@ def GetValidSkill (pc, className, stat):
 		if stat != IE_STEALTH:
 			return 0
 	else:
-		if SkillsTable.GetValue (SkillStatNames[stat], className) == -1:
+		if SkillsTable.GetValue (SkillStatNames[stat], className, GTV_INT) == -1:
 			return 0
 
 	return val
@@ -665,7 +665,7 @@ def GetResistances(pc):
 	stats = []
 	# only bg2 displayed all the resistances, but it is useful information
 	# Resistances
-	if GameCheck.IsBG2():
+	if GameCheck.IsBG2() or GameCheck.IsBG2EE():
 		stats.append(32204)
 	elif not GameCheck.IsBG1():
 		stats.append (15544)

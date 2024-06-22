@@ -210,11 +210,11 @@ def MageSelectionChanged (oldwin):
 	else:
 		OpenMageWindow (ToggleSpellWindow.Args)
 
-ToggleMageWindow = GUICommonWindows.CreateTopWinLoader(2, "GUIMG", GUICommonWindows.ToggleWindow, InitMageWindow, MageSelectionChanged, GUICommonWindows.DefaultWinPos, True)
-OpenMageWindow = GUICommonWindows.CreateTopWinLoader(2, "GUIMG", GUICommonWindows.OpenWindowOnce, InitMageWindow, MageSelectionChanged, GUICommonWindows.DefaultWinPos, True)
+ToggleMageWindow = GUICommonWindows.CreateTopWinLoader(2, "GUIMG", GUICommonWindows.ToggleWindow, InitMageWindow, MageSelectionChanged, True)
+OpenMageWindow = GUICommonWindows.CreateTopWinLoader(2, "GUIMG", GUICommonWindows.OpenWindowOnce, InitMageWindow, MageSelectionChanged, True)
 
-ToggleSorcererWindow = GUICommonWindows.CreateTopWinLoader(8, "GUIMG", GUICommonWindows.ToggleWindow, InitMageWindow, MageSelectionChanged, GUICommonWindows.DefaultWinPos, True)
-OpenSorcererWindow = GUICommonWindows.CreateTopWinLoader(8, "GUIMG", GUICommonWindows.OpenWindowOnce, InitMageWindow, MageSelectionChanged, GUICommonWindows.DefaultWinPos, True)
+ToggleSorcererWindow = GUICommonWindows.CreateTopWinLoader(8, "GUIMG", GUICommonWindows.ToggleWindow, InitMageWindow, MageSelectionChanged, True)
+OpenSorcererWindow = GUICommonWindows.CreateTopWinLoader(8, "GUIMG", GUICommonWindows.OpenWindowOnce, InitMageWindow, MageSelectionChanged, True)
 
 def MagePrevLevelPress ():
 	global MageSpellLevel
@@ -458,11 +458,9 @@ def OpenSequencerWindow ():
 		TargLabel.SetVisible (False)
 	else:
 		CondSelect.OnSelect (ContingencyHelpCondition)
-		CondSelect.SetColor (ColorWhitish, TA_COLOR_OPTIONS)
 		CondSelect.SetOptions ([elem[0] for elem in ContCond], "ContCond", 0)
 
 		TargSelect.OnSelect (ContingencyHelpTarget)
-		TargSelect.SetColor (ColorWhitish, TA_COLOR_OPTIONS)
 		if Target:
 			TargSelect.SetOptions ([ContTarg[0][0]], "ContTarg", 1)
 		else:

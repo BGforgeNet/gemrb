@@ -1,15 +1,19 @@
-GemRB git (7ce99f1):
+GemRB git (64fb7c):
   New features:
     - 
     - full i18n (language) support, custom journal entries
+    - BMP v3 and v5 support
+    - chunking approximation
     - small test suite, tracy support
-    - iwd2 identification variants
+    - iwd2 identification variants and speed data
 
   Improved features:
     - 
+    - area music
     - colored logging, pathfinding, drawing
-    - switched to c++14
-    - ee compat, iwd2&pst worldmap, creature sounds, effects, familiars, modals
+    - switched to c++14, build system
+    - ee compat, effects, modals, projectiles, familiars
+    - iwd2 & pst worldmap, creature & area sounds
     - bugfixes
 
 GemRB v0.9.2 (2023-07-08):

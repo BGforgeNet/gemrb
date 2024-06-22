@@ -2,6 +2,11 @@
 *
            AT_1       AT_2       AT_3       AT_4       TYPE       SPACE      PALETTE    SIZE
 0x0100     SPCHUNKS   SPCHUNKS   SPCHUNKS   SPCHUNKS   13         0          0          *
+0x0200     SPBLOOD    SPBLOOD    SPBLOOD    SPBLOOD    13         0          1          *
+0x0210     SPBLOOD    SPBLOOD    SPBLOOD    SPBLOOD    13         0          1          *
+0x0220     SPBLOOD    SPBLOOD    SPBLOOD    SPBLOOD    13         0          1          *
+0x0230     SPBLOOD    SPBLOOD    SPBLOOD    SPBLOOD    13         0          1          *
+0x0240     SPBLOOD    SPBLOOD    SPBLOOD    SPBLOOD    13         0          1          *
 0x0300     SPSMPUFF   SPSMPUFF   SPSMPUFF   SPSMPUFF   13         0          0          *
 0x0400     SKLH       SKLH       SKLH       SKLH       13         0          1          *
 0x0410     GLPHWRDH   GLPHWRDH   GLPHWRDH   GLPHWRDH   13         0          1          *
@@ -181,7 +186,7 @@
 0x7F01     MMIN       MMIN       MMIN       MMIN       4          2          1          *
 0x7F02     MBEH       MBEH       MBEH       MBEH       4          3          1          *
 0x7F03     MIMP       MIMP       MIMP       MIMP       4          2          1          *
-0x7F04     MIGO       MIGO       MIGO       MIGO       4          4          1          *
+0x7F04     MIGO       MIGO       MIGO       MIGO       4          3          1          *
 0x7F05     MDJI       MDJI       MDJI       MDJI       4          2          1          *
 0x7F06     MDJL       MDJL       MDJL       MDJL       4          2          1          *
 0x7F07     MGLC       MGLC       MGLC       MGLC       4          2          1          *

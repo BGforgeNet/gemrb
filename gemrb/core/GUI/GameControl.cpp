@@ -46,10 +46,10 @@
 #include "Scriptable/Container.h"
 #include "Scriptable/Door.h"
 #include "Scriptable/InfoPoint.h"
+#include "fmt/ranges.h"
 
 #include <array>
 #include <cmath>
-#include <fmt/ranges.h>
 
 namespace GemRB {
 
@@ -148,7 +148,7 @@ Point GameControl::GetFormationOffset(size_t formation, uint8_t pos) const
 	return Formations::GetFormation(formation)[pos];
 }
 
-Point GameControl::GetFormationPoint(const Point& origin, size_t pos, double angle, const std::vector<Point>& exclude) const
+Point GameControl::GetFormationPoint(const Point& origin, size_t pos, float_t angle, const std::vector<Point>& exclude) const
 {
 	Point vec;
 	
@@ -184,7 +184,7 @@ Point GameControl::GetFormationPoint(const Point& origin, size_t pos, double ang
 	Point dest = vec + origin;
 	int step = 0;
 	constexpr int maxStep = 4;
-	double stepAngle = 0.0;
+	float_t stepAngle = 0.0;
 	const Point& start = vec;
 	
 	auto NextDest = [&]() {
@@ -217,7 +217,7 @@ Point GameControl::GetFormationPoint(const Point& origin, size_t pos, double ang
 	while (step < maxStep) {
 		auto it = std::find_if(exclude.begin(), exclude.end(), [&](const Point& p) {
 			// look for points within some radius
-			return p.isWithinRadius(radius, dest);
+			return p.IsWithinRadius(radius, dest);
 		});
 
 		if (it != exclude.end()) {
@@ -244,7 +244,7 @@ Point GameControl::GetFormationPoint(const Point& origin, size_t pos, double ang
 }
 
 GameControl::FormationPoints GameControl::GetFormationPoints(const Point& origin, const std::vector<Actor*>& actors,
-															 double angle) const
+															 float_t angle) const
 {
 	FormationPoints formation;
 	for (size_t i = 0; i < actors.size(); ++i) {
@@ -253,7 +253,7 @@ GameControl::FormationPoints GameControl::GetFormationPoints(const Point& origin
 	return formation;
 }
 
-void GameControl::DrawFormation(const std::vector<Actor*>& actors, const Point& formationPoint, double angle) const
+void GameControl::DrawFormation(const std::vector<Actor*>& actors, const Point& formationPoint, float_t angle) const
 {
 	std::vector<Point> formationPoints = GetFormationPoints(formationPoint, actors, angle);
 	for (size_t i = 0; i < actors.size(); ++i) {
@@ -318,7 +318,7 @@ void GameControl::DrawArrowMarker(const Point& p, const Color& color) const
 	const Region& bounds = Viewport();
 	if (bounds.PointInside(p)) return;
 
-	orient_t dir = GetOrient(p, bounds.Center());
+	orient_t dir = GetOrient(bounds.Center(), p);
 	Holder<Sprite2D> arrow = core->GetScrollCursorSprite(dir, 0);
 	
 	const Point& dp = bounds.Intercept(p) - bounds.origin;
@@ -429,7 +429,7 @@ void GameControl::WillDraw(const Region& /*drawFrame*/, const Region& /*clip*/)
 
 	if (!vpVector.IsZero() && MoveViewportTo(vpOrigin + vpVector, false)) {
 		if ((Flags() & IgnoreEvents) == 0 && core->GetMouseScrollSpeed() && !screenFlags.Test(ScreenFlags::AlwaysCenter)) {
-			orient_t orient = GetOrient(vpVector, Point());
+			orient_t orient = GetOrient(Point(), vpVector);
 			// set these cursors on game window so they are universal
 			window->SetCursor(core->GetScrollCursorSprite(orient, numScrollCursor));
 
@@ -612,7 +612,7 @@ void GameControl::DrawSelf(const Region& screen, const Region& /*clip*/)
 	const Point& gameMousePos = GameMousePos();
 	// draw reticles
 	if (isFormationRotation) {
-		double angle = AngleFromPoints(gameMousePos, gameClickPoint);
+		float_t angle = AngleFromPoints(gameMousePos, gameClickPoint);
 		DrawFormation(game->selected, gameClickPoint, angle);
 	} else {
 		for (const auto& selectee : game->selected) {
@@ -1887,6 +1887,7 @@ void GameControl::HandleContainer(Container *container, Actor *actor)
 
 	if ((targetMode == TargetMode::Cast) && spellCount) {
 		//we'll get the container back from the coordinates
+		target_types |= GA_POINT;
 		TryToCast(actor, container->Pos);
 		//Do not reset target_mode, TryToCast does it for us!!
 		return;
@@ -2195,8 +2196,8 @@ bool GameControl::OnMouseUp(const MouseEvent& me, unsigned short Mod)
 		if (overMe && (overMe->Type == ST_DOOR || overMe->Type == ST_CONTAINER || (overMe->Type == ST_TRAVEL && targetMode == TargetMode::None))) {
 			// move to the object before trying to interact with it
 			Actor* mainActor = GetMainSelectedActor();
-			if (mainActor && overMe->Type == ST_CONTAINER) {
-				CreateMovement(mainActor, p, false, tryToRun); // let one actor handle loot and containers
+			if (mainActor && overMe->Type != ST_TRAVEL) {
+				CreateMovement(mainActor, p, false, tryToRun); // let one actor handle doors, loot and containers
 			} else {
 				CommandSelectedMovement(p, true, false, tryToRun);
 			}
@@ -2244,6 +2245,7 @@ void GameControl::PerformSelectedAction(const Point& p)
 	//add a check if you don't want some random monster handle doors and such
 	if (targetMode == TargetMode::Cast && !(gamedata->GetSpecialSpell(spellName) & SPEC_AREA)) {
 		//the player is using an item or spell on the ground
+		target_types |= GA_POINT;
 		TryToCast(selectedActor, p);
 	} else if (!overMe) {
 		return;
@@ -2301,7 +2303,7 @@ void GameControl::CommandSelectedMovement(const Point& p, bool formation, bool a
 	if (party.empty())
 		return;
 
-	double angle = isFormationRotation ? AngleFromPoints(GameMousePos(), p) : formationBaseAngle;
+	float_t angle = isFormationRotation ? AngleFromPoints(GameMousePos(), p) : formationBaseAngle;
 	bool doWorldMap = ShouldTriggerWorldMap(party[0]);
 	
 	std::vector<Point> formationPoints = GetFormationPoints(p, party, angle);

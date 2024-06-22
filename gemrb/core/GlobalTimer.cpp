@@ -85,7 +85,6 @@ void GlobalTimer::DoStep(int count)
 		if (d <= magnitude) {
 			p = goal;
 		} else {
-			magnitude = std::min(magnitude, d);
 			float r = magnitude / float(d);
 			p.x = (1 - r) * p.x + r * goal.x;
 			p.y = (1 - r) * p.y + r * goal.y;
@@ -161,6 +160,8 @@ bool GlobalTimer::Update()
 	if (!gc->InDialog() || !(gc->GetDialogueFlags() & DF_FREEZE_SCRIPTS)) {
 		map->UpdateFog();
 		map->UpdateEffects();
+		map->UpdateProjectiles();
+
 		if (thisTime) {
 			//this measures in-world time (affected by effects, actions, etc)
 			game->AdvanceTime(1);

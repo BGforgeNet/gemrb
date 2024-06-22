@@ -142,16 +142,19 @@ enum MapEnv : ieWord {
 #define MAX_RESCOUNT 10
 
 struct RestHeaderType {
+	// we ignore 32 bytes for the unused name
 	ieStrRef Strref[MAX_RESCOUNT];
 	ResRef CreResRef[MAX_RESCOUNT];
-	ieWord Difficulty;
 	ieWord CreatureNum;
+	ieWord Difficulty;
+	ieDword Duration; // spawn duration, lifespan — useless, since they spawn on top of you
+	ieWord RandomWalkDistance; // random walk distance, hunting range
+	ieWord FollowDistance; // other walk distance, follow range, (currently) unused
 	ieWord Maximum;
 	ieWord Enabled;
 	ieWord DayChance;
 	ieWord NightChance;
-	ieDword sduration;
-	ieWord rwdist, owdist;
+	// some more unused space
 };
 
 struct Entrance {
@@ -161,7 +164,6 @@ struct Entrance {
 };
 
 class GEM_EXPORT MapNote {
-	void swap(MapNote& mn) noexcept;
 public:
 	// FIXME: things can get messed up by exposing these (specifically strref and text)
 	ieStrRef strref = ieStrRef::INVALID;
@@ -427,7 +429,7 @@ private:
 public:
 	Map(TileMap *tm, TileProps tileProps, Holder<Sprite2D> sm);
 	~Map(void) override;
-	static void NormalizeDeltas(double &dx, double &dy, double factor = 1);
+	static void NormalizeDeltas(float_t &dx, float_t &dy, float_t factor = 1);
 	static Point ConvertCoordToTile(const Point&);
 	static Point ConvertCoordFromTile(const Point&);
 
@@ -444,6 +446,7 @@ public:
 	ResRef ResolveTerrainSound(const ResRef &sound, const Point &pos) const;
 	void DoStepForActor(Actor *actor, ieDword time) const;
 	void UpdateEffects();
+	void UpdateProjectiles();
 	/* removes empty heaps and returns total itemcount */
 	int ConsolidateContainers();
 	/* transfers all ever visible piles (loose items) to the specified position */
@@ -501,14 +504,16 @@ public:
 	Container *GetContainerByGlobalID(ieDword objectID) const;
 	InfoPoint *GetInfoPointByGlobalID(ieDword objectID) const;
 	Actor* GetActorByGlobalID(ieDword objectID) const;
-	Actor* GetActorInRadius(const Point &p, int flags, unsigned int radius) const;
+	Actor* GetActorInRadius(const Point& p, int flags, unsigned int radius, const Scriptable* checker = nullptr) const;
 	std::vector<Actor *> GetAllActorsInRadius(const Point &p, int flags, unsigned int radius, const Scriptable *see = NULL) const;
 	const std::vector<Actor *> &GetAllActors() const { return actors; }
 	std::vector<Actor*> GetActorsInRect(const Region& rgn, int excludeFlags) const;
 	Actor* GetActor(const ieVariable& Name, int flags) const;
 	Actor* GetActor(int i, bool any) const;
 	Actor* GetActor(const Point &p, int flags, const Movable *checker = NULL) const;
+	Scriptable* GetScriptable(const Point& p, int flags, const Movable* checker = nullptr) const;
 	Scriptable *GetScriptableByDialog(const ResRef& resref) const;
+	std::vector<Scriptable*> GetScriptablesInRect(const Point& p, unsigned int radius) const;
 	Actor *GetItemByDialog(const ResRef& resref) const;
 	Actor *GetActorByResource(const ResRef& resref) const;
 	Actor *GetActorByScriptName(const ieVariable& name) const;
@@ -582,14 +587,11 @@ public:
 	void AdjustPosition(Point& goal, const Size& startingRadius = ZeroSize, int size = -1) const;
 	void AdjustPositionNavmap(Point& goal, const Size& radius = ZeroSize) const;
 	/* Finds the path which leads the farthest from d */
-	PathListNode* RunAway(const Point &s, const Point &d, unsigned int size, int maxPathLength, bool backAway, const Actor *caller) const;
+	PathListNode* RunAway(const Point& s, const Point& d, int maxPathLength, bool backAway, const Actor* caller) const;
 	PathListNode* RandomWalk(const Point &s, int size, int radius, const Actor *caller) const;
-	/* Returns true if there is no path to d */
-	bool TargetUnreachable(const Point &s, const Point &d, unsigned int size, bool actorsAreBlocking = false) const;
 	/* returns true if there is enemy visible */
 	bool AnyPCSeesEnemy() const;
 	/* Finds straight path from s, length l and orientation o, f=1 passes wall, f=2 rebounds from wall*/
-	PathListNode* GetLine(const Point &start, const Point &dest, int flags) const;
 	PathListNode* GetLine(const Point &start, int steps, orient_t orient) const;
 	PathListNode* GetLine(const Point &start, int Steps, orient_t Orientation, int flags) const;
 	PathListNode* GetLine(const Point &start, const Point &dest, int speed, orient_t Orientation, int flags) const;

@@ -416,15 +416,6 @@ const Color& MapNote::GetColor() const
 	return colors[color];
 }
 
-void MapNote::swap(MapNote& mn) noexcept
-{
-	if (&mn == this) return;
-	std::swap(strref, mn.strref);
-	std::swap(color, mn.color);
-	std::swap(text, mn.text);
-	std::swap(Pos, mn.Pos);
-}
-
 //returns true if creature must be embedded in the area
 //npcs in saved game shouldn't be embedded either
 static inline bool MustSave(const Actor *actor)
@@ -561,13 +552,13 @@ void Map::MoveToNewArea(const ResRef &area, const ieVariable& entrance, unsigned
 		// (north first, then south) but it doesn't seem to matter
 		if (direction & ADIRF_NORTH) {
 			X = map->TMap->XCellCount * 32;
-			Y = 0;
+			Y = 64;
 		} else if (direction & ADIRF_EAST) {
 			X = map->TMap->XCellCount * 64;
 			Y = map->TMap->YCellCount * 32;
 		} else if (direction & ADIRF_SOUTH) {
 			X = map->TMap->XCellCount * 32;
-			Y = map->TMap->YCellCount * 64;
+			Y = map->TMap->YCellCount * 64 - 64;
 		} else if (direction & ADIRF_WEST) {
 			X = 0;
 			Y = map->TMap->YCellCount * 32;
@@ -585,43 +576,32 @@ void Map::MoveToNewArea(const ResRef &area, const ieVariable& entrance, unsigned
 		X = ent->Pos.x;
 		Y = ent->Pos.y;
 		face = ent->Face;
+		// testing in candlekeep shows that actors are offset from the entrance position
+		if (face > W && face < E) {
+			X -= 2 * 16;
+		} else if (face < W || face > E) {
+			X += 2 * 16;
+		}
 	}
 	//LeaveArea is the same in ALL engine versions
 	std::string command = fmt::format("LeaveArea(\"{}\",[{}.{}],{})", area, X, Y, face);
 
-	if (EveryOne&CT_GO_CLOSER) {
-		int i=game->GetPartySize(false);
+	if (EveryOne & (CT_GO_CLOSER | CT_SELECTED)) {
+		int i = game->GetPartySize(false);
 		while (i--) {
-			Actor *pc = game->GetPC(i,false);
-			if (pc->GetCurrentArea()==this) {
-			  pc->MovementCommand(command);
-			}
+			Actor* pc = game->GetPC(i, false);
+			if (pc->GetCurrentArea() != this) continue;
+			if (EveryOne & CT_SELECTED && !pc->IsSelected()) continue;
+			pc->MovementCommand(command);
 		}
-		i = game->GetNPCCount();
-		while(i--) {
-			Actor *npc = game->GetNPC(i);
-			if ((npc->GetCurrentArea()==this) && (npc->GetStat(IE_EA)<EA_GOODCUTOFF) ) {
-				npc->MovementCommand(command);
-			}
-		}
-	} else if (EveryOne&CT_SELECTED) {
-		int i=game->GetPartySize(false);
-		while (i--) {
-			Actor *pc = game->GetPC(i,false);
 
-			if (!pc->IsSelected()) {
-				continue;
-			}
-			if (pc->GetCurrentArea()==this) {
-				pc->MovementCommand(command);
-			}
-		}
 		i = game->GetNPCCount();
-		while(i--) {
-			Actor *npc = game->GetNPC(i);
-			if (npc->IsSelected() && (npc->GetCurrentArea()==this)) {
-				npc->MovementCommand(command);
-			}
+		while (i--) {
+			Actor* npc = game->GetNPC(i);
+			if (npc->GetCurrentArea() != this) continue;
+			if (EveryOne & CT_SELECTED && !npc->IsSelected()) continue;
+			if (EveryOne & CT_GO_CLOSER && npc->GetStat(IE_EA) >= EA_GOODCUTOFF) continue;
+			npc->MovementCommand(command);
 		}
 	} else {
 		actor->MovementCommand(std::move(command));
@@ -799,8 +779,8 @@ void Map::UpdateScripts()
 		} else if (actor->GetStep() && actor->GetSpeed()) {
 			// Make actors pathfind if there are others nearby
 			// in order to avoid bumping when possible
-			const Actor* nearActor = GetActorInRadius(actor->Pos, GA_NO_DEAD|GA_NO_UNSCHEDULED, actor->GetAnims()->GetCircleSize());
-			if (nearActor && nearActor != actor) {
+			const Actor* nearActor = GetActorInRadius(actor->Pos, GA_NO_DEAD | GA_NO_UNSCHEDULED | GA_NO_SELF, actor->GetAnims()->GetCircleSize(), actor);
+			if (nearActor) {
 				actor->NewPath();
 			}
 			DoStepForActor(actor, time);
@@ -889,8 +869,7 @@ void Map::UpdateScripts()
 
 		// Play the PST specific enter sound
 		if (wasActive & _TRAP_USEPOINT) {
-			core->GetAudioDrv()->Play(ip->EnterWav, SFX_CHAN_ACTIONS,
-				ip->TrapLaunch);
+			core->GetAudioDrv()->Play(ip->EnterWav, SFXChannel::Actions, ip->TrapLaunch);
 		}
 		ip->Update();
 	}
@@ -1121,9 +1100,9 @@ const Projectile* Map::GetNextTrap(proIterator& iter, int flags) const
 
 		iter++;
 		// find dormant traps (thieves', skull traps, glyphs of warding ...)
-		if (flags == 0 && pro->GetPhase() == P_TRIGGER) break;
+		if (flags == 0 && pro->IsWaitingForTrigger()) break;
 		// find AOE projectiles like stinking cloud
-		if (flags == 1 && pro->Extension  && pro->GetPhase() != P_TRIGGER) break;
+		if (flags == 1 && pro->Extension && !pro->IsWaitingForTrigger()) break;
 	} while (pro);
 	return pro;
 }
@@ -1350,23 +1329,14 @@ void Map::DrawMap(const Region& viewport, FogRenderer& fogRenderer, uint32_t dFl
 			sca = GetNextScriptedAnimation(scaidx);
 			break;
 		case AOT_PROJECTILE:
-			int drawn;
-			if (gametime > oldGameTime) {
-				drawn = pro->Update();
-			} else {
-				drawn = 1;
-			}
-			if (drawn) {
+			{
 				BlitFlags flags = SetDrawingStencilForProjectile(pro, viewport);
 				pro->Draw(viewport, flags);
-				proidx++;
-			} else {
-				delete pro;
-				proidx = projectiles.erase(proidx);
+				pro = GetNextProjectile(++proidx);
 			}
-			pro = GetNextProjectile(proidx);
 			break;
 		case AOT_SPARK:
+			int drawn;
 			if (gametime > oldGameTime) {
 				drawn = spark->Update();
 			} else {
@@ -1839,6 +1809,18 @@ void Map::UpdateEffects()
 	}
 }
 
+void Map::UpdateProjectiles()
+{
+	for (auto it = projectiles.begin(); it != projectiles.end(); ) {
+		(*it)->Update();
+		if ((*it)->IsStillIntact()) {
+			++it;
+		} else {
+			it = projectiles.erase(it);
+		}
+	}
+}
+
 void Map::Shout(const Actor* actor, int shoutID, bool global) const
 {
 	for (auto listener : actors) {
@@ -2098,6 +2080,62 @@ Actor* Map::GetActorByGlobalID(ieDword objectID) const
  GA_POINT     64  - not actor specific
  GA_NO_HIDDEN 128 - hidden actors don't play
 */
+Scriptable* Map::GetScriptable(const Point& p, int flags, const Movable* checker) const
+{
+	auto actor = GetActor(p, flags, checker);
+	if (actor) return actor;
+
+	size_t i = TMap->GetDoorCount();
+	while (i--) {
+		Door* door = TMap->GetDoor(i);
+		if (door->IsOver(p)) return door;
+	}
+
+	i = TMap->GetContainerCount();
+	while (i--) {
+		Container* cont = TMap->GetContainer(i);
+		if (cont->IsOver(p)) return cont;
+	}
+
+	i = TMap->GetInfoPointCount();
+	while (i--) {
+		InfoPoint* ip = TMap->GetInfoPoint(i);
+		if (ip->IsOver(p)) return ip;
+	}
+
+	return nullptr;
+}
+
+// deliberately excluding actors
+std::vector<Scriptable*> Map::GetScriptablesInRect(const Point& p, unsigned int radius) const
+{
+	std::vector<Scriptable*> neighbours;
+	Region rect(p, Size());
+	radius = Feet2Pixels(radius, 0);
+	rect.ExpandAllSides(radius);
+	rect.y += radius / 4;
+	rect.h -= radius / 2;
+
+	size_t i = TMap->GetDoorCount();
+	while (i--) {
+		Door* door = TMap->GetDoor(i);
+		if (door->BBox.IntersectsRegion(rect)) neighbours.emplace_back(door);
+	}
+
+	i = TMap->GetContainerCount();
+	while (i--) {
+		Container* cont = TMap->GetContainer(i);
+		if (cont->BBox.IntersectsRegion(rect)) neighbours.emplace_back(cont);
+	}
+
+	i = TMap->GetInfoPointCount();
+	while (i--) {
+		InfoPoint* ip = TMap->GetInfoPoint(i);
+		if (ip->BBox.IntersectsRegion(rect)) neighbours.emplace_back(ip);
+	}
+	return neighbours;
+}
+
 Actor* Map::GetActor(const Point &p, int flags, const Movable *checker) const
 {
 	for (auto actor : actors) {
@@ -2111,12 +2149,12 @@ Actor* Map::GetActor(const Point &p, int flags, const Movable *checker) const
 	return NULL;
 }
 
-Actor* Map::GetActorInRadius(const Point &p, int flags, unsigned int radius) const
+Actor* Map::GetActorInRadius(const Point& p, int flags, unsigned int radius, const Scriptable* checker) const
 {
 	for (auto actor : actors) {
 		if (PersonalDistance( p, actor ) > radius)
 			continue;
-		if (!actor->ValidTarget(flags) ) {
+		if (!actor->ValidTarget(flags, checker)) {
 			continue;
 		}
 		return actor;
@@ -2144,7 +2182,6 @@ std::vector<Actor *> Map::GetAllActorsInRadius(const Point &p, int flags, unsign
 	}
 	return neighbours;
 }
-
 
 Actor* Map::GetActor(const ieVariable& Name, int flags) const
 {
@@ -2214,7 +2251,7 @@ void Map::PurgeArea(bool items)
 				continue;
 			}
 
-			if (ac->RemovalTime > core->GetGame()->GameTime) {
+			if (ac->Timers.removalTime > core->GetGame()->GameTime) {
 				continue;
 			}
 
@@ -2398,30 +2435,52 @@ bool Map::SpawnsAlive() const
 
 void Map::PlayAreaSong(int SongType, bool restart, bool hard) const
 {
+	// Some subareas don't have their own songlist. IWDs do nothing about it,
+	// while other games support continuation values:
+	// * -1 for last master area's song of the same entry,
+	// * -2 for current area's day/night song
+	// Eg. bg1 AR2607 (intro candlekeep ambush south), AR2302 (friendly arm inn 2nd floor)
+	if (SongType == 0xffff || SongList[SongType] == ieDword(-2)) {
+		// select SONG_DAY or SONG_NIGHT
+		Trigger parameters;
+		parameters.int0Parameter = 0; // TIMEOFDAY_DAY, while dusk, dawn and night we treat as night
+		SongType = int(GameScript::TimeOfDay(nullptr, &parameters) != 1);
+	}
 	size_t pl = SongList[SongType];
-	const ieVariable* poi = &core->GetMusicPlaylist(pl);
-	// for subareas fall back to the main list
-	// needed eg. in bg1 ar2607 (intro candlekeep ambush south)
-	// it's not the correct music, perhaps it needs the one from the master area
-	// it would match for ar2607 and ar2600, but very annoying (see GetMasterArea)
-	// ... but this is also definitely wrong for iwd
-	if (IsStar(*poi) && !MasterArea && SongType == SONG_BATTLE && core->HasFeature(GFFlags::BREAKABLE_WEAPONS)) {
-		poi = &core->GetMusicPlaylist(SongType);
-		pl = SongType;
+
+	bool hasContinuation = core->HasFeature(GFFlags::HAS_CONTINUATION);
+	Game* game = core->GetGame();
+	const PluginHolder<MusicMgr>& musicMgr = core->GetMusicMgr();
+
+	// handle -1
+	// Test for non-zero pl in order to keep subareas quiet which disable
+	// music explicitely with pl=0.
+	ieVariable poi = core->GetMusicPlaylist(pl);
+	if (IsStar(poi) && pl && !MasterArea && hasContinuation) {
+		static constexpr int bc1Idx = 19; // fallback to first BG1 battle music, should never be hit
+
+		const Map* lastMasterArea = game->GetMap(game->LastMasterArea, false);
+		pl = lastMasterArea ? lastMasterArea->SongList[SongType] : bc1Idx;
+		poi = core->GetMusicPlaylist(pl);
 	}
 
-	if (IsStar(*poi)) return;
+	if (IsStar(poi)) {
+		// ease off the music if possible
+		// playlists without the exit segment will be forcefully ended
+		musicMgr->End();
+		return;
+	}
 
 	//check if restart needed (either forced or the current song is different)
-	if (!restart && core->GetMusicMgr()->IsCurrentPlayList(*poi)) return;
-	int ret = core->GetMusicMgr()->SwitchPlayList(*poi, hard);
+	if (!restart && musicMgr->IsCurrentPlayList(poi)) return;
+	int ret = musicMgr->SwitchPlayList(poi, hard);
 	if (ret) {
 		//Here we disable the faulty musiclist entry
 		core->DisableMusicPlaylist(pl);
 		return;
 	}
 	if (SongType == SONG_BATTLE) {
-		core->GetGame()->CombatCounter = 150;
+		game->CombatCounter = 150;
 	}
 }
 
@@ -2468,6 +2527,9 @@ PathMapFlags Map::GetBlockedTile(const SearchmapPoint& p, int size) const
 PathMapFlags Map::GetBlockedTile(const SearchmapPoint& p) const
 {
 	PathMapFlags ret = tileProps.QuerySearchMap(p);
+	if (bool(ret & PathMapFlags::TRAVEL)) {
+		ret |= PathMapFlags::PASSABLE;
+	}
 	if (bool(ret & (PathMapFlags::DOOR_IMPASSABLE|PathMapFlags::ACTOR))) {
 		ret &= ~PathMapFlags::PASSABLE;
 	}
@@ -2532,10 +2594,10 @@ PathMapFlags Map::GetBlockedInLine(const Point &s, const Point &d, bool stopOnIm
 	PathMapFlags ret = PathMapFlags::IMPASSABLE;
 	Point p = s;
 	const SearchmapPoint sms = ConvertCoordToTile(s);
-	double factor = caller && caller->GetSpeed() ? double(gamedata->GetStepTime()) / double(caller->GetSpeed()) : 1;
+	float_t factor = caller && caller->GetSpeed() ? float_t(gamedata->GetStepTime()) / float_t(caller->GetSpeed()) : 1;
 	while (p != d) {
-		double dx = d.x - p.x;
-		double dy = d.y - p.y;
+		float_t dx = d.x - p.x;
+		float_t dy = d.y - p.y;
 		NormalizeDeltas(dx, dy, factor);
 		p.x += dx;
 		p.y += dy;
@@ -2568,7 +2630,7 @@ bool Map::IsVisibleLOS(const Point &s, const Point &d, const Actor *caller) cons
 bool Map::IsWalkableTo(const Point &s, const Point &d, bool actorsAreBlocking, const Actor *caller) const
 {
 	PathMapFlags ret = GetBlockedInLine(s, d, true, caller);
-	PathMapFlags mask = PathMapFlags::PASSABLE | PathMapFlags::TRAVEL | (actorsAreBlocking ? PathMapFlags::UNMARKED : PathMapFlags::ACTOR);
+	PathMapFlags mask = PathMapFlags::PASSABLE | (actorsAreBlocking ? PathMapFlags::UNMARKED : PathMapFlags::ACTOR);
 	return bool(ret & mask);
 }
 
@@ -2729,6 +2791,7 @@ void Map::AddProjectile(Projectile* pro)
 void Map::AddProjectile(Projectile *pro, const Point &source, ieDword actorID, bool fake)
 {
 	pro->MoveTo(this, source);
+	pro->SetupZPos();
 	pro->SetTarget(actorID, fake);
 	AddProjectile(pro);
 }
@@ -2736,6 +2799,7 @@ void Map::AddProjectile(Projectile *pro, const Point &source, ieDword actorID, b
 void Map::AddProjectile(Projectile* pro, const Point &source, const Point &dest)
 {
 	pro->MoveTo(this, source);
+	pro->SetupZPos();
 	pro->SetTarget(dest);
 	AddProjectile(pro);
 }
@@ -2747,10 +2811,8 @@ ieDword Map::HasVVCCell(const ResRef &resource, const Point &p) const
 	ieDword ret = 0;
 
 	for (const VEFObject *vvc: vvcCells) {
-		if (!p.IsInvalid()) {
-			if (vvc->Pos.x != p.x) continue;
-			if (vvc->Pos.y != p.y) continue;
-		}
+		if (!p.IsInvalid() && vvc->Pos != p) continue;
+
 		if (resource != vvc->ResName) continue;
 		const ScriptedAnimation *sca = vvc->GetSingleObject();
 		if (sca) {
@@ -2901,7 +2963,7 @@ std::string Map::dump(bool show_actors) const
 	AppendFormat(buffer, "Extended night: {}\n", YesNo(AreaType & AT_EXTENDED_NIGHT));
 	AppendFormat(buffer, "Weather: {}\n", YesNo(AreaType & AT_WEATHER));
 	AppendFormat(buffer, "Area Type: {}\n", AreaType & (AT_CITY | AT_FOREST | AT_DUNGEON));
-	AppendFormat(buffer, "Can rest: {}\n", YesNo(core->GetGame()->CanPartyRest(REST_AREA)));
+	AppendFormat(buffer, "Can rest: {}\n", YesNo(core->GetGame()->CanPartyRest(RestChecks::Area)));
 
 	if (show_actors) {
 		buffer.append("\n");
@@ -3268,27 +3330,46 @@ least one creature is summoned, regardless the difficulty cap.
 */
 int Map::CheckRestInterruptsAndPassTime(const Point &pos, int hours, int day)
 {
+	Game* game = core->GetGame();
 	if (!RestHeader.CreatureNum || !RestHeader.Enabled || !RestHeader.Maximum) {
-		core->GetGame()->AdvanceTime(hours * core->Time.hour_size);
+		game->AdvanceTime(hours * core->Time.hour_size);
 		return 0;
 	}
-
-	// TODO: it appears there was a limit on how many rest encounters can
-	// be triggered in a row (or area?), since HOFMode should increase it
-	// by 1. It doesn't look like it was stored in the header, so perhaps
-	// it was just a hardcoded limit to make the game more forgiving
-	// OR did it increase the number of spawned creatures by 1, 2?
 
 	//based on ingame timer
 	int chance=day?RestHeader.DayChance:RestHeader.NightChance;
 	bool interrupt = RAND(0, 99) < chance;
 	if (!interrupt) {
-		core->GetGame()->AdvanceTime(hours * core->Time.hour_size);
+		game->AdvanceTime(hours * core->Time.hour_size);
 		return 0;
 	}
 
+	// slightly different behaviour in iwd1, with heart of fury increasing spawn rate,
+	// no level adjustments and less randomness
+	if (core->HasFeature(GFFlags::IWD_REST_SPAWNS)) {
+		// time was actually randomly advanced between 0 and 450 seconds, ie. 0-1.5h
+		// ... but that would require some refactoring, since we use hours everywhere else
+		int step = 1;
+		game->AdvanceTime(step * core->Time.hour_size);
+
+		int idx = RAND(0, RestHeader.CreatureNum - 1);
+		const Actor* creature = gamedata->GetCreature(RestHeader.CreResRef[idx]);
+		if (!creature) return 0;
+
+		displaymsg->DisplayString(RestHeader.Strref[idx], GUIColors::GOLD, STRING_FLAGS::SOUND);
+		// the HoF bonus is potentially interesting for externalization
+		int attempts = std::max(1, RestHeader.Maximum + RAND(-2, 2)) + (game->HOFMode ? 1 : 0);
+		for (int i = 0; i < attempts; i++) {
+			if (!SpawnCreature(pos, RestHeader.CreResRef[idx], Size(20, 20), RestHeader.RandomWalkDistance)) {
+				break;
+			}
+		}
+
+		return hours - step;
+	}
+
 	unsigned int spawncount = 0;
-	int spawnamount = core->GetGame()->GetTotalPartyLevel(true) * RestHeader.Difficulty;
+	int spawnamount = game->GetTotalPartyLevel(true) * RestHeader.Difficulty;
 	if (spawnamount < 1) spawnamount = 1;
 	// this loop is a bit odd, since we only check the interrupt chance once
 	// the only way this not to return immediately at hour 0 is from a data error
@@ -3296,13 +3377,13 @@ int Map::CheckRestInterruptsAndPassTime(const Point &pos, int hours, int day)
 		int idx = RAND(0, RestHeader.CreatureNum - 1);
 		const Actor* creature = gamedata->GetCreature(RestHeader.CreResRef[idx]);
 		if (!creature) {
-			core->GetGame()->AdvanceTime(core->Time.hour_size);
+			game->AdvanceTime(core->Time.hour_size);
 			continue;
 		}
 
 		displaymsg->DisplayString(RestHeader.Strref[idx], GUIColors::GOLD, STRING_FLAGS::SOUND);
 		while (spawnamount > 0 && spawncount < RestHeader.Maximum) {
-			if (!SpawnCreature(pos, RestHeader.CreResRef[idx], Size(20, 20), RestHeader.rwdist, &spawnamount, &spawncount)) {
+			if (!SpawnCreature(pos, RestHeader.CreResRef[idx], Size(20, 20), RestHeader.RandomWalkDistance, &spawnamount, &spawncount)) {
 				break;
 			}
 		}
@@ -3354,25 +3435,28 @@ void Map::ExploreMapChunk(const Point &Pos, int range, int los)
 			Tile.x = Pos.x + explore.VisibilityMasks[i][p].x;
 			Tile.y = Pos.y + explore.VisibilityMasks[i][p].y;
 
-			if (los) {
-				if (!block) {
-					PathMapFlags type = GetBlocked(Tile);
-					if (bool(type & PathMapFlags::NO_SEE)) {
-						block=true;
-					} else if (bool(type & PathMapFlags::SIDEWALL)) {
-						sidewall = true;
-					} else if (sidewall) {
-						block = true;
-					// outdoor doors are automatically transparent (DOOR_TRANSPARENT)
-					// as a heuristic, exclude cities to avoid unnecessary shrouding
-					} else if (bool(type & PathMapFlags::DOOR_IMPASSABLE) && AreaType & AT_OUTDOOR && !(AreaType & AT_CITY)) {
-						fogOnly = true;
-					}
+			if (!los) {
+				ExploreTile(Tile, fogOnly);
+				continue;
+			}
+
+			if (!block) {
+				PathMapFlags type = GetBlocked(Tile);
+				if (bool(type & PathMapFlags::NO_SEE)) {
+					block=true;
+				} else if (bool(type & PathMapFlags::SIDEWALL)) {
+					sidewall = true;
+				} else if (sidewall) {
+					block = true;
+				// outdoor doors are automatically transparent (DOOR_TRANSPARENT)
+				// as a heuristic, exclude cities to avoid unnecessary shrouding
+				} else if (bool(type & PathMapFlags::DOOR_IMPASSABLE) && AreaType & AT_OUTDOOR && !(AreaType & AT_CITY)) {
+					fogOnly = true;
 				}
-				if (block) {
-					Pass--;
-					if (!Pass) break;
-				}
+			}
+			if (block) {
+				Pass--;
+				if (!Pass) break;
 			}
 			ExploreTile(Tile, fogOnly);
 		}
@@ -3521,18 +3605,19 @@ void Map::MoveVisibleGroundPiles(const Point &Pos)
 Container *Map::GetPile(Point position)
 {
 	//converting to search square
-	position = ConvertCoordToTile(position);
+	Point smPos = ConvertCoordToTile(position);
 	ieVariable pileName;
-	pileName.Format("heap_{}.{}", position.x, position.y);
+	pileName.Format("heap_{}.{}", smPos.x, smPos.y);
 	//pixel position is centered on search square
-	position.x=position.x*16+8;
-	position.y=position.y*12+6;
+	Point upperLeft = position;
+	position.x += 8;
+	position.y += 6;
 	Container *container = TMap->GetContainer(position,IE_CONTAINER_PILE);
 	if (!container) {
 		container = AddContainer(pileName, IE_CONTAINER_PILE, nullptr);
 		container->Pos=position;
 		//bounding box covers the search square
-		container->BBox = Region::RegionFromPoints(Point(position.x-8, position.y-6), Point(position.x+8,position.y+6));
+		container->BBox = Region::RegionFromPoints(upperLeft, Point(position.x + 8, position.y + 6));
 	}
 	return container;
 }
@@ -3663,7 +3748,7 @@ void Map::Sparkle(ieDword duration, ieDword color, ieDword type, const Point &po
 		style = SP_TYPE_POINT;
 	}
 	sparkles->SetType(style, path, grow);
-	sparkles->SetColor(color);
+	sparkles->SetColorIndex(color);
 	sparkles->SetPhase(P_GROW);
 
 	spaIterator iter;
@@ -3933,8 +4018,8 @@ void Map::SetBackground(const ResRef &bgResRef, ieDword duration)
 
 Actor* Map::GetRandomEnemySeen(const Actor* origin) const
 {
-	int type = GetGroup(origin);
-	if (type == 2) {
+	GroupType type = GetGroup(origin);
+	if (type == GroupType::Neutral) {
 		return nullptr; //no enemies
 	}
 
@@ -3942,11 +4027,11 @@ Actor* Map::GetRandomEnemySeen(const Actor* origin) const
 	std::vector<Actor*> neighbours = GetAllActorsInRadius(origin->Pos, flags, origin->GetBase(IE_VISUALRANGE), origin);
 	Actor* victim = neighbours[RAND<size_t>(0, neighbours.size() - 1)];
 
-	if (type) { // origin is PC
+	if (type == GroupType::PC) {
 		if (victim->GetStat(IE_EA) >= EA_EVILCUTOFF) {
 			return victim;
 		}
-	} else {
+	} else { // GroupType::Enemy
 		if (victim->GetStat(IE_EA) <= EA_GOODCUTOFF) {
 			return victim;
 		}

@@ -29,32 +29,29 @@
 #include "Streams/FileStream.h"
 #include "Strings/String.h"
 
-#ifdef CACHE_TLK_OVERRIDE
-#include <map>
-
-using StringMapType = std::map<ieStrRef, char *>;
-#endif
-
 namespace GemRB {
 
 constexpr strret_t SEGMENT_SIZE = 512;
 #define TOH_HEADER_SIZE 20
 
+// this mimics normal TLK entries with a bunch of unused / not useful fields
+// the originals passed it around whole, but since custom entries were never
+// used outside the UI, the flags and sound fields don't matter
 struct EntryType
 {
-	ieStrRef strref;
-	ieByte dummy[20];
-	strpos_t offset;
-	
+	ieStrRef strref = ieStrRef::INVALID;
+	ieDword flags = 0;
+	ResRef soundRef;
+	ieDword volumeVariance = 0;
+	ieDword pitchVariance = 0;
+	strpos_t offset = 0;
+
 	static constexpr strpos_t FileSize = 28; // size in bytes for this structure in the TLK file
 };
 
 class CTlkOverride  
 {
 private:
-#ifdef CACHE_TLK_OVERRIDE
-	StringMapType stringmap;
-#endif
 	DataStream* tot_str = nullptr;
 	DataStream* toh_str = nullptr;
 	ieDword AuxCount = 0;
