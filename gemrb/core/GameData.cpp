@@ -99,7 +99,7 @@ int GameData::LoadCreature(const ResRef& creature, unsigned int PartySlot, bool 
 		actor->creVersion = VersionOverride;
 	}
 
-	actor->Area = core->GetGame()->CurrentArea;
+	actor->AreaName = core->GetGame()->CurrentArea;
 	if (actor->BaseStats[IE_STATE_ID] & STATE_DEAD) {
 		actor->SetStance( IE_ANI_TWITCH );
 	} else {
@@ -934,7 +934,7 @@ const std::vector<int>& GameData::GetBonusSpells(int ability)
 			for (TableMgr::index_t i = 0; i < splLevels; i++) {
 				bonuses[i] = mxSplBon->QueryFieldSigned<int>(row, i);
 			}
-			bonusSpells[statValue] = bonuses;
+			bonusSpells[statValue] = std::move(bonuses);
 		}
 	}
 
@@ -1009,7 +1009,7 @@ int GameData::GetMiscRule(const TableMgr::key_t& rowName)
 	return miscRule->QueryFieldSigned<int>(rowName, "VALUE");
 }
 
-int GameData::GetDifficultyMod(ieDword mod, ieDword difficulty)
+int GameData::GetDifficultyMod(ieDword mod, Difficulty difficulty)
 {
 	static bool ignore = false;
 	if (ignore) {
@@ -1022,7 +1022,7 @@ int GameData::GetDifficultyMod(ieDword mod, ieDword difficulty)
 		return 0;
 	}
 
-	return difficultyLevels->QueryFieldSigned<int>(mod, difficulty);
+	return difficultyLevels->QueryFieldSigned<int>(mod, UnderType(difficulty));
 }
 
 int GameData::GetXPBonus(ieDword bonusType, ieDword level)

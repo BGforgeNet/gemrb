@@ -64,7 +64,7 @@ std::array<TriggerFunction, MAX_TRIGGERS> triggers;
 std::array<ActionFunction, MAX_ACTIONS> actions;
 std::array<ObjectFunction, MAX_OBJECTS> objects;
 std::array<IDSFunction, MAX_OBJECT_FIELDS> idtargets;
-std::array<short, MAX_ACTIONS> actionflags;
+std::array<uint16_t, MAX_ACTIONS> actionflags;
 std::array<short, MAX_TRIGGERS> triggerflags;
 ResRefRCCache<Script> BcsCache; //cache for scripts
 int ObjectIDSCount = 7;
@@ -78,6 +78,7 @@ std::vector<ResRef> ObjectIDSTableNames;
 int ObjectFieldsCount = 7;
 int ExtraParametersCount = 0;
 int RandomNumValue;
+int NextTriggerObjectID;
 Gem_Polygon **polygons;
 
 int GetReaction(const Actor *target, const Scriptable *Sender)
@@ -310,7 +311,7 @@ void PlaySequenceCore(Scriptable *Sender, const Action *parameters, Animation::i
 	Scriptable* tar;
 
 	if (parameters->objects[1]) {
-		tar = GetScriptableFromObject(Sender, parameters->objects[1]);
+		tar = GetScriptableFromObject(Sender, parameters);
 		if (!tar) {
 			//could be an animation
 			AreaAnimation* anim = Sender->GetCurrentArea( )->GetAnimation( parameters->objects[1]->objectNameVar);
@@ -482,7 +483,7 @@ void DisplayStringCore(Scriptable* const Sender, ieStrRef Strref, int flags, con
 
 	ResRef buffer;
 	if (soundpath == nullptr || soundpath[0] == '\0') {
-		StringBlock sb = core->strings->GetStringBlock( Strref );
+		StringBlock sb = core->strings->GetStringBlock(Strref, STRING_FLAGS::RESOLVE_TAGS);
 		if (!sb.Sound.IsEmpty()) {
 			buffer = sb.Sound;
 			soundpath = buffer.c_str();
@@ -575,7 +576,7 @@ int CanSee(const Scriptable *Sender, const Scriptable *target, bool range, int s
 			dist = snd->Modified[IE_VISUALRANGE];
 			if (halveRange) dist /= 2;
 		} else {
-			dist = VOODOO_VISUAL_RANGE;
+			dist = VOODOO_VISUAL_RANGE; // NOTE: perhaps we should use the parameter from LOS if that was used
 			los = false;
 		}
 
@@ -602,8 +603,7 @@ int SeeCore(Scriptable *Sender, const Trigger *parameters, int justlos)
 	} else {
 		flags |= GA_NO_DEAD;
 	}
-	const Scriptable* tar = GetScriptableFromObject(Sender, parameters->objectParameter, flags);
-	/* don't set LastSeen if this isn't an actor */
+	const Scriptable* tar = GetScriptableFromObject(Sender, parameters, flags);
 	if (!tar) {
 		return 0;
 	}
@@ -620,7 +620,9 @@ int SeeCore(Scriptable *Sender, const Trigger *parameters, int justlos)
 			return 1;
 		}
 		// NOTE: Detect supposedly doesn't set LastMarked — disable on GA_DETECT if needed
-		if (Sender->Type==ST_ACTOR && tar->Type==ST_ACTOR && Sender!=tar) {
+		// don't set LastSeen if this isn't an actor ... except in iwd2, since ar6104 61pvpost.bcs relies on it
+		bool setSeen = core->HasFeature(GFFlags::RULES_3ED) || Sender->Type == ST_ACTOR;
+		if (setSeen && tar->Type == ST_ACTOR && Sender != tar) {
 			Actor* snd = static_cast<Actor*>(Sender);
 			snd->objects.LastSeen = tar->GetGlobalID();
 			snd->objects.LastMarked = tar->GetGlobalID();
@@ -634,7 +636,7 @@ int SeeCore(Scriptable *Sender, const Trigger *parameters, int justlos)
 // transferring item from Sender to target
 //if target has no inventory, the item will be destructed
 //if target can't get it, it will be dropped at its feet
-int MoveItemCore(Scriptable *Sender, Scriptable *target, const ResRef& resref, int flags, int setflag, int count)
+MIC MoveItemCore(Scriptable* Sender, Scriptable* target, const ResRef& resref, int flags, int setflag, int count)
 {
 	Inventory *myinv;
 	Map *map;
@@ -643,7 +645,7 @@ int MoveItemCore(Scriptable *Sender, Scriptable *target, const ResRef& resref, i
 	bool gotitem = false;
 
 	if (!target) {
-		return MIC_INVALID;
+		return MIC::Invalid;
 	}
 	map=Sender->GetCurrentArea();
 	Actor* tmp = nullptr;
@@ -657,7 +659,7 @@ int MoveItemCore(Scriptable *Sender, Scriptable *target, const ResRef& resref, i
 			myinv=&((Container *) Sender)->inventory;
 			break;
 		default:
-			return MIC_INVALID;
+			return MIC::Invalid;
 	}
 	CREItem *item;
 	myinv->RemoveItem(resref, flags, &item, count);
@@ -675,7 +677,7 @@ int MoveItemCore(Scriptable *Sender, Scriptable *target, const ResRef& resref, i
 
 	if (!item) {
 		// nothing was removed
-		return MIC_NOITEM;
+		return MIC::NoItem;
 	}
 
 	item->Flags|=setflag;
@@ -701,7 +703,7 @@ int MoveItemCore(Scriptable *Sender, Scriptable *target, const ResRef& resref, i
 
 	if (!myinv) {
 		delete item;
-		return MIC_GOTITEM; // actually it was lost, not gained
+		return MIC::GotItem; // actually it was lost, not gained
 	}
 	if ( myinv->AddSlotItem(item, SLOT_ONLYINVENTORY) !=ASI_SUCCESS) {
 		// drop it at my feet
@@ -712,12 +714,12 @@ int MoveItemCore(Scriptable *Sender, Scriptable *target, const ResRef& resref, i
 			}
 			displaymsg->DisplayMsgCentered(HCStrings::InventoryFullItemDrop, FT_ANY, GUIColors::XPCHANGE);
 		}
-		return MIC_FULL;
+		return MIC::Full;
 	}
 	if (gotitem && !lostitem) {
 		displaymsg->DisplayMsgCentered(HCStrings::GotItem, FT_ANY, GUIColors::XPCHANGE);
 	}
-	return MIC_GOTITEM;
+	return MIC::GotItem;
 }
 
 void PolymorphCopyCore(const Actor *src, Actor *tar)
@@ -836,7 +838,7 @@ static Point FindOffScreenPoint(const Scriptable* Sender, int flags, int phase)
 
 void CreateCreatureCore(Scriptable* Sender, Action* parameters, int flags)
 {
-	Scriptable* tmp = GetScriptableFromObject(Sender, parameters->objects[1]);
+	Scriptable* tmp = GetScriptableFromObject(Sender, parameters);
 	//if there is nothing to copy, don't spawn anything
 	if (flags & CC_COPY && (!tmp || tmp->Type != ST_ACTOR)) {
 		return;
@@ -1092,7 +1094,7 @@ void BeginDialog(Scriptable* Sender, const Action* parameters, int Flags)
 
 	ScriptDebugLog(DebugMode::VARIABLES, "BeginDialog core");
 
-	tar = GetStoredActorFromObject(Sender, parameters->objects[1], GA_NO_DEAD);
+	tar = GetStoredActorFromObject(Sender, parameters, GA_NO_DEAD);
 	if (Flags & BD_OWN) {
 		scr = tar;
 	} else {
@@ -1338,7 +1340,7 @@ static EffectRef fx_movetoarea_ref = { "MoveToArea", -1 };
 
 bool CreateMovementEffect(Actor* actor, const ResRef& area, const Point &position, int face)
 {
-	if (actor->Area == area) return false; //no need of this for intra area movement
+	if (actor->AreaName == area) return false; // no need of this for intra area movement
 
 	Effect *fx = EffectQueue::CreateEffect(fx_movetoarea_ref, 0, face, FX_DURATION_INSTANT_PERMANENT);
 	if (!fx) return false;
@@ -1398,7 +1400,7 @@ void MoveToObjectCore(Scriptable *Sender, Action *parameters, ieDword flags, boo
 		Sender->ReleaseCurrentAction();
 		return;
 	}
-	const Scriptable *target = GetStoredActorFromObject(Sender, parameters->objects[1]);
+	const Scriptable* target = GetStoredActorFromObject(Sender, parameters);
 	if (!target) {
 		Sender->ReleaseCurrentAction();
 		return;
@@ -1572,328 +1574,6 @@ void AttackCore(Scriptable *Sender, Scriptable *target, int flags)
 	attacker->PerformAttack(core->GetGame()->GameTime);
 }
 
-//we need this because some special characters like _ or * are also accepted
-inline bool ismysymbol(const char letter)
-{
-	if (letter==']') return false;
-	if (letter=='[') return false;
-	if (letter==')') return false;
-	if (letter=='(') return false;
-	if (letter=='.') return false;
-	if (letter==',') return false;
-	return true;
-}
-
-//this function returns a value, symbol could be a numeric string or
-//a symbol from idsname
-static int GetIdsValue(const char *&symbol, const ResRef& idsname)
-{
-	char *newsymbol;
-	int value = strtosigned<int>(symbol, &newsymbol);
-	if (symbol!=newsymbol) {
-		symbol=newsymbol;
-		return value;
-	}
-
-	int idsfile = core->LoadSymbol(idsname);
-	auto valHook = core->GetSymbol(idsfile);
-	if (!valHook) {
-		Log(ERROR, "GameScript", "Missing IDS file {} for symbol {}!", idsname, symbol);
-		return -1;
-	}
-
-	std::string symbolName(64, '\0');
-	for (int x = 0; ismysymbol(*symbol) && x < 63; x++) {
-		symbolName[x] = *symbol;
-		symbol++;
-	}
-	if (symbolName.substr(0, 6) == "anyone") return 0;
-	return valHook->GetValue(symbolName);
-}
-
-static int ParseIntParam(const char *&src, const char *&str)
-{
-	//going to the variable name
-	while (*str != '*' && *str !=',' && *str != ')' ) {
-		str++;
-	}
-	if (*str=='*') { //there may be an IDS table
-		str++;
-		ResRef idsTabName;
-		char *cur = idsTabName.begin();
-		const char *end = idsTabName.bufend();
-		while (cur != end && *str != ',' && *str != ')') {
-			*cur = *str;
-			++cur;
-			++str;
-		}
-
-		if (idsTabName[0]) {
-			return GetIdsValue(src, idsTabName);
-		}
-	}
-	//no IDS table
-	return strtosigned<int>(src, (char **) &src);
-}
-
-static void ParseIdsTarget(const char *&src, Object *&object)
-{
-	for (int i=0;i<ObjectFieldsCount;i++) {
-		object->objectFields[i]=GetIdsValue(src, ObjectIDSTableNames[i]);
-		if (*src!='.') {
-			break;
-		}
-		src++;
-	}
-	src++; //skipping ]
-}
-
-//this will skip to the next element in the prototype of an action/trigger
-#define SKIP_ARGUMENT() while (*str && ( *str != ',' ) && ( *str != ')' )) str++
-
-static void ParseObject(const char *&str,const char *&src, Object *&object)
-{
-	SKIP_ARGUMENT();
-	object = new Object();
-	switch (*src) {
-	case ')':
-		// missing parameter
-		// (for example, StartDialogueNoSet() in aerie.d)
-		Log(WARNING, "GSUtils", "ParseObject expected an object when parsing dialog");
-		// replace with Myself
-		object->objectFilters[0] = 1;
-		break;
-	case '"':
-		//Scriptable Name
-		src++;
-		int i;
-		for (i=0;i<(int) sizeof(object->objectName)-1 && *src && *src!='"';i++)
-		{
-			object->objectName[i] = *src;
-			src++;
-		}
-		object->objectName[i] = 0;
-		src++;
-		break;
-	case '[':
-		src++; //skipping [
-		ParseIdsTarget(src, object);
-		break;
-	default: //nested object filters
-		int Nesting=0;
-
-		while (Nesting<MaxObjectNesting) {
-			memmove(object->objectFilters+1, object->objectFilters, (int) sizeof(int) *(MaxObjectNesting-1) );
-			object->objectFilters[0]=GetIdsValue(src,"object");
-			if (*src!='(') {
-				break;
-			}
-			src++; //skipping (
-			if (*src==')') {
-				src++;
-				break;
-			}
-			Nesting++;
-		}
-		if (*src=='[') {
-			ParseIdsTarget(src, object);
-		}
-		src+=Nesting; //skipping )
-	}
-}
-
-// some iwd2 dialogs use # instead of " for delimiting parameters (11phaen, 30gobpon, 11oswald)
-// BUT at the same time, some bg2 mod prefixes use it too (eg. Tashia)
-inline bool paramDelimiter(const char *src)
-{
-	return *src == '"' || (*src == '#' && (*(src-1) == '(' || *(src-1) == ',' || *(src+1) == ')'));
-}
-
-/* this function was lifted from GenerateAction, to make it clearer */
-Action* GenerateActionCore(const char *src, const char *str, unsigned short actionID)
-{
-	Action *newAction = new Action(true);
-	newAction->actionID = actionID;
-	//this flag tells us to merge 2 consecutive strings together to get
-	//a variable (context+variablename)
-	int mergestrings = actionflags[newAction->actionID]&AF_MERGESTRINGS;
-	int objectCount = (newAction->actionID == 1) ? 0 : 1; // only object 2 and 3 are used by actions, 1 being reserved for ActionOverride
-	int stringsCount = 0;
-	int intCount = 0;
-	if (actionflags[newAction->actionID]&AF_DIRECT) {
-		Object *tmp = new Object();
-		tmp->objectFields[0] = -1;
-		newAction->objects[objectCount++] = tmp;
-	}
-	//Here is the Action; Now we need to evaluate the parameters, if any
-	if (*str!=')') while (*str) {
-		if (*(str+1)!=':') {
-			Log(WARNING, "GSUtils", "parser was sidetracked: {}", str);
-		}
-		switch (*str) {
-			default:
-				Log(WARNING, "GSUtils", "Invalid type: {}", str);
-				delete newAction;
-				return NULL;
-
-			case 'p': //Point
-				SKIP_ARGUMENT();
-				src++; //Skip [
-				newAction->pointParameter.x = strtosigned<int>( src, (char **) &src, 10);
-				src++; //Skip .
-				newAction->pointParameter.y = strtosigned<int>( src, (char **) &src, 10);
-				src++; //Skip ]
-				break;
-
-			case 'i': //Integer
-			{
-				int value = ParseIntParam(src, str);
-				if (!intCount) {
-					newAction->int0Parameter = value;
-				} else if (intCount == 1) {
-					newAction->int1Parameter = value;
-				} else {
-					newAction->int2Parameter = value;
-				}
-				intCount++;
-			}
-			break;
-
-			case 'a':
-			// Action - only ActionOverride takes such a parameter
-			{
-				SKIP_ARGUMENT();
-				std::string action(257, '\0');
-				int i = 0;
-				int openParenthesisCount = 0;
-				while (true) {
-					if (*src == ')') {
-						if (!openParenthesisCount)
-							break;
-						openParenthesisCount--;
-					} else {
-						if (*src == '(') {
-							openParenthesisCount++;
-						} else {
-							if (( *src == ',' ) &&
-								!openParenthesisCount)
-								break;
-						}
-					}
-					action[i] = *src;
-					i++;
-					src++;
-				}
-				Action* act = GenerateAction( action);
-				if (!act) {
-					delete newAction;
-					return NULL;
-				}
-				act->objects[0] = newAction->objects[0];
-				newAction->objects[0] = NULL; //avoid freeing of object
-				delete newAction; //freeing action
-				newAction = act;
-			}
-			break;
-
-			case 'o': //Object
-				if (objectCount==3) {
-					Log(ERROR, "GSUtils", "Invalid object count!");
-					delete newAction;
-					return NULL;
-				}
-				ParseObject(str, src, newAction->objects[objectCount++]);
-				break;
-
-			case 's': //String
-			{
-				SKIP_ARGUMENT();
-				src++;
-				int i;
-				char* dst;
-				if (!stringsCount) {
-					dst = newAction->string0Parameter.begin();
-				} else {
-					dst = newAction->string1Parameter.begin();
-				}
-				//if there are 3 strings, the first 2 will be merged,
-				//the last one will be left alone
-				if (*str==')') {
-					mergestrings = 0;
-				}
-				//skipping the context part, which
-				// is to be readded later
-				if (mergestrings) {
-					for (i=0;i<6;i++) {
-						*dst++='*';
-					}
-				}
-				else {
-					i=0;
-				}
-				//breaking on ',' in case of a monkey attack
-				//fixes bg1:melicamp.dlg, bg1:sharte.dlg, bg2:udvith.dlg
-				// NOTE: if strings ever need a , inside, this is will need to change
-				while (*src != ',' && !paramDelimiter(src)) {
-					if (*src == 0) {
-						delete newAction;
-						return NULL;
-					}
-					//sizeof(context+name) = 40
-					if (i<40) {
-						*dst++ = (char) tolower(*src);
-						i++;
-					}
-					src++;
-				}
-				if (*src == '"' || *src == '#') {
-					src++;
-				}
-				*dst = 0;
-				//reading the context part
-				if (mergestrings) {
-					str++;
-					if (*str!='s') {
-						Log(ERROR, "GSUtils", "Invalid mergestrings: {}", str);
-						delete newAction;
-						return NULL;
-					}
-					SKIP_ARGUMENT();
-					if (!stringsCount) {
-						dst = newAction->string0Parameter.begin();
-					} else {
-						dst = newAction->string1Parameter.begin();
-					}
-
-					//this works only if there are no spaces
-					if (*src++!=',' || *src++!='"') {
-						break;
-					}
-					//reading the context string
-					i=0;
-					while (*src != '"') {
-						if (*src == 0) {
-							delete newAction;
-							return NULL;
-						}
-						if (i++<6) {
-							*dst++ = (char) tolower(*src);
-						}
-						src++;
-					}
-					src++; //skipping "
-				}
-				stringsCount++;
-			}
-			break;
-		}
-		str++;
-		if (*src == ',' || *src==')')
-			src++;
-	}
-	return newAction;
-}
-
 void MoveNearerTo(Scriptable *Sender, const Scriptable *target, int distance, int dont_release)
 {
 	Point p;
@@ -2035,134 +1715,6 @@ Action *ParamCopyNoOverride(const Action *parameters)
 	newAction->objects[1]= ObjectCopy( parameters->objects[1] );
 	newAction->objects[2]= ObjectCopy( parameters->objects[2] );
 	return newAction;
-}
-
-Trigger *GenerateTriggerCore(const char *src, const char *str, int trIndex, int negate)
-{
-	Trigger *newTrigger = new Trigger();
-	newTrigger->triggerID = (unsigned short) triggersTable->GetValueIndex(trIndex) & 0x3fff;
-	newTrigger->flags = (unsigned short) negate;
-	int mergestrings = triggerflags[newTrigger->triggerID]&TF_MERGESTRINGS;
-	int stringsCount = 0;
-	int intCount = 0;
-	//Here is the Trigger; Now we need to evaluate the parameters
-	if (*str!=')') while (*str) {
-		if (*(str+1)!=':') {
-			Log(WARNING, "GSUtils", "parser was sidetracked: {}",str);
-		}
-		switch (*str) {
-			default:
-				Log(ERROR, "GSUtils", "Invalid type: {}", str);
-				delete newTrigger;
-				return NULL;
-
-			case 'p': //Point
-				SKIP_ARGUMENT();
-				src++; //Skip [
-				newTrigger->pointParameter.x = strtosigned<int>(src, (char **) &src, 10);
-				src++; //Skip .
-				newTrigger->pointParameter.y = strtosigned<int>(src, (char **) &src, 10);
-				src++; //Skip ]
-				break;
-
-			case 'i': //Integer
-			{
-				int value = ParseIntParam(src, str);
-				if (!intCount) {
-					newTrigger->int0Parameter = value;
-				} else if (intCount == 1) {
-					newTrigger->int1Parameter = value;
-				} else {
-					newTrigger->int2Parameter = value;
-				}
-				intCount++;
-			}
-			break;
-
-			case 'o': //Object
-				ParseObject(str, src, newTrigger->objectParameter);
-				break;
-
-			case 's': //String
-			{
-				SKIP_ARGUMENT();
-				src++;
-				int i;
-				char* dst;
-				if (!stringsCount) {
-					dst = newTrigger->string0Parameter.begin();
-				} else {
-					dst = newTrigger->string1Parameter.begin();
-				}
-				//skipping the context part, which
-				// is to be readded later
-				if (mergestrings) {
-					for (i=0;i<6;i++) {
-						*dst++='*';
-					}
-				}
-				else {
-					i=0;
-				}
-				// some iwd2 dialogs use # instead of " for delimiting parameters (11phaen)
-				// BUT at the same time, some bg2 mod prefixes use it too (eg. Tashia)
-				while (!paramDelimiter(src)) {
-					if (*src == 0) {
-						delete newTrigger;
-						return NULL;
-					}
-
-					//sizeof(context+name) = 40
-					if (i<40) {
-						*dst++ = (char) tolower(*src);
-						i++;
-					}
-					src++;
-				}
-				*dst = 0;
-				//reading the context part
-				if (mergestrings) {
-					str++;
-					if (*str!='s') {
-						Log(ERROR, "GSUtils", "Invalid mergestrings 2: {}", str);
-						delete newTrigger;
-						return NULL;
-					}
-					SKIP_ARGUMENT();
-					if (!stringsCount) {
-						dst = newTrigger->string0Parameter.begin();
-					} else {
-						dst = newTrigger->string1Parameter.begin();
-					}
-
-					//this works only if there are no spaces
-					if (*src++!='"' || *src++!=',' || *src++!='"') {
-						break;
-					}
-					//reading the context string
-					i=0;
-					while (*src != '"' && (*src != '#' || (*(src-1) != '(' && *(src-1) != ','))) {
-						if (*src == 0) {
-							delete newTrigger;
-							return NULL;
-						}
-
-						if (i++<6) {
-							*dst++ = (char) tolower(*src);
-						}
-						src++;
-					}
-				}
-				src++; //skipping "
-				stringsCount++;
-			}
-			break;
-		}
-		str++;
-		if (*src == ',' || *src==')')
-			src++;
-	}
-	return newTrigger;
 }
 
 void SetVariable(Scriptable* Sender, const StringParam& VarName, ieDword value, VarContext context)
@@ -2456,7 +2008,9 @@ unsigned int GetSpellDistance(const ResRef& spellRes, Scriptable* Sender, const 
 	}
 
 	if (!target.IsZero()) {
-		float_t angle = AngleFromPoints(Sender->Pos, target);
+		Point pos = Sender->Pos;
+		if (Sender->Type == ST_DOOR) pos = Scriptable::As<const Door>(Sender)->TrapLaunch;
+		float_t angle = AngleFromPoints(pos, target);
 		return Feet2Pixels(dist, angle);
 	}
 
@@ -2708,7 +2262,7 @@ void SpellCore(Scriptable *Sender, Action *parameters, int flags)
 		seeflag = GA_NO_DEAD;
 	}
 
-	Scriptable* tar = GetStoredActorFromObject( Sender, parameters->objects[1], seeflag );
+	Scriptable* tar = GetStoredActorFromObject(Sender, parameters, seeflag);
 	if (!tar) {
 		parameters->int2Parameter = 0;
 		Sender->ReleaseCurrentAction();
@@ -2724,7 +2278,7 @@ void SpellCore(Scriptable *Sender, Action *parameters, int flags)
 		const Actor* target = Scriptable::As<const Actor>(tar);
 		const Spell* spl = gamedata->GetSpell(Sender->SpellResRef, true);
 		if (Sender != tar && target && !(flags & SC_NOINTERRUPT) &&
-		    ((!(spl->Flags & SF_TARGETS_INVISIBLE) && target->IsInvisibleTo(Sender)) ||
+		    ((!(spl->Flags & SF_TARGETS_INVISIBLE) && target->IsInvisibleTo(Sender, 7)) ||
 		     (tar->GetInternalFlag() & (IF_ACTIVE | IF_VISIBLE)) != (IF_ACTIVE | IF_VISIBLE) ||
 		     target->GetStat(IE_AVATARREMOVAL))) {
 			Sender->ReleaseCurrentAction();
@@ -2784,6 +2338,7 @@ void SpellCore(Scriptable *Sender, Action *parameters, int flags)
 	} else {
 		duration = Sender->CastSpell(tar, flags & SC_DEPLETE, flags & SC_INSTANT, flags & SC_NOINTERRUPT, level);
 	}
+	if (Sender->Type == ST_DOOR) duration = 0;
 	if (duration == -1) {
 		// some kind of error
 		parameters->int2Parameter = 0;
@@ -2904,6 +2459,7 @@ void SpellPointCore(Scriptable *Sender, Action *parameters, int flags)
 	} else {
 		duration = Sender->CastSpellPoint(parameters->pointParameter, flags & SC_DEPLETE, flags & SC_INSTANT, flags & SC_NOINTERRUPT, level);
 	}
+	if (Sender->Type == ST_DOOR) duration = 0;
 	if (duration == -1) {
 		// some kind of error
 		Sender->ReleaseCurrentAction();
@@ -2966,7 +2522,7 @@ void AddXPCore(const Action *parameters, bool divide)
 
 int NumItemsCore(Scriptable *Sender, const Trigger *parameters)
 {
-	const Scriptable* target = GetScriptableFromObject(Sender, parameters->objectParameter);
+	const Scriptable* target = GetScriptableFromObject(Sender, parameters);
 	if (!target) {
 		return 0;
 	}
@@ -2988,7 +2544,7 @@ static EffectRef fx_level_bounce_ref = { "Bounce:SpellLevel", -1 };
 static EffectRef fx_level_bounce_dec_ref = { "Bounce:SpellLevelDec", -1 };
 unsigned int NumBouncingSpellLevelCore(Scriptable *Sender, const Trigger *parameters)
 {
-	const Scriptable* target = GetScriptableFromObject(Sender, parameters->objectParameter);
+	const Scriptable* target = GetScriptableFromObject(Sender, parameters);
 	const Actor* actor = Scriptable::As<Actor>(target);
 	if (!actor) {
 		return 0;
@@ -3009,9 +2565,9 @@ unsigned int NumBouncingSpellLevelCore(Scriptable *Sender, const Trigger *parame
 
 static EffectRef fx_level_immunity_ref = { "Protection:Spelllevel", -1 };
 static EffectRef fx_level_immunity_dec_ref = { "Protection:SpellLevelDec", -1 };
-int NumImmuneToSpellLevelCore(Scriptable *Sender, const Trigger *parameters)
+unsigned int NumImmuneToSpellLevelCore(Scriptable* Sender, const Trigger* parameters)
 {
-	const Scriptable* target = GetScriptableFromObject(Sender, parameters->objectParameter);
+	const Scriptable* target = GetScriptableFromObject(Sender, parameters);
 	const Actor* actor = Scriptable::As<Actor>(target);
 	if (!actor) {
 		return 0;
@@ -3066,7 +2622,7 @@ void RunAwayFromCore(Scriptable* Sender, const Action* parameters, int flags)
 
 	Point start = parameters->pointParameter;
 	if (!(flags & RunAwayFlags::UsePoint)) {
-		const Scriptable* tar = GetStoredActorFromObject(Sender, parameters->objects[1]);
+		const Scriptable* tar = GetStoredActorFromObject(Sender, parameters);
 		if (!tar) {
 			Sender->ReleaseCurrentAction();
 			return;
@@ -3096,12 +2652,12 @@ void RunAwayFromCore(Scriptable* Sender, const Action* parameters, int flags)
 
 void MoveGlobalObjectCore(Scriptable* Sender, const Action* parameters, int flags)
 {
-	Scriptable* tar = GetScriptableFromObject(Sender, parameters->objects[1]);
+	Scriptable* tar = GetScriptableFromObject(Sender, parameters);
 	Actor* actor = Scriptable::As<Actor>(tar);
 	if (!actor) {
 		return;
 	}
-	const Scriptable* to = GetScriptableFromObject(Sender, parameters->objects[2]);
+	const Scriptable* to = GetScriptableFromObject2(Sender, parameters);
 	if (!to) return;
 	const Map* map = to->GetCurrentArea();
 	if (!map) return;

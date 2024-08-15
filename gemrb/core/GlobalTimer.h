@@ -30,9 +30,11 @@ namespace GemRB {
 class GEM_EXPORT GlobalTimer {
 private:
 	tick_t startTime = 0; //forcing an update;
+	tick_t lastFadeDuration = 0;
 
 	tick_t fadeToCounter = 0;
 	tick_t fadeToMax = 0;
+	tick_t fadeOutFallback = 0;
 	tick_t fadeFromCounter = 0;
 	tick_t fadeFromMax = 0;
 	unsigned short fadeToFactor = 1; // divisor to limit maximum target opacity by
@@ -55,6 +57,7 @@ public:
 
 	void Freeze();
 	bool Update();
+	bool IsFading() const;
 	bool ViewportIsMoving() const;
 	void DoStep(int count);
 	void SetMoveViewPort(Point p, int spd, bool center);

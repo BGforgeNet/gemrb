@@ -680,11 +680,11 @@ static const ActionLink actionnames[] = {
 	{"face", GameScript::Face, AF_BLOCKING|AF_ALIVE},
 	{"faceobject", GameScript::FaceObject, AF_BLOCKING},
 	{"facesavedlocation", GameScript::FaceSavedLocation, AF_BLOCKING},
-	{"fadefromblack", GameScript::FadeFromColor, AF_BLOCKING}, //probably the same
-	{"fadefromcolor", GameScript::FadeFromColor, AF_BLOCKING},
-	{"fadetoandfromcolor", GameScript::FadeToAndFromColor, AF_BLOCKING},
-	{"fadetoblack", GameScript::FadeToColor, AF_BLOCKING}, //probably the same
-	{"fadetocolor", GameScript::FadeToColor, AF_BLOCKING},
+	{"fadefromblack", GameScript::FadeFromColor, 0}, //probably the same
+	{"fadefromcolor", GameScript::FadeFromColor, 0},
+	{"fadetoandfromcolor", GameScript::FadeToAndFromColor, 0},
+	{"fadetoblack", GameScript::FadeToColor, 0}, //probably the same
+	{"fadetocolor", GameScript::FadeToColor, 0},
 	{"fakeeffectexpirycheck", GameScript::FakeEffectExpiryCheck, 0},
 	{"fillslot", GameScript::FillSlot, 0},
 	{"finalsave", GameScript::SaveGame, 0}, //synonym
@@ -827,9 +827,9 @@ static const ActionLink actionnames[] = {
 	{"movetosavedlocation", GameScript::MoveToSavedLocation,AF_MERGESTRINGS|AF_BLOCKING},
 	//take care of the typo in the original bg2 action.ids
 	{"movetosavedlocationn", GameScript::MoveToSavedLocation, AF_MERGESTRINGS|AF_BLOCKING},
-	{"moveviewobject", GameScript::MoveViewObject, AF_BLOCKING},
-	{"moveviewpoint", GameScript::MoveViewPoint, AF_BLOCKING},
-	{"moveviewpointuntildone", GameScript::MoveViewPoint, 0},
+	{"moveviewobject", GameScript::MoveViewObject, 0},
+	{"moveviewpoint", GameScript::MoveViewPoint, 0},
+	{"moveviewpointuntildone", GameScript::MoveViewPointUntilDone, AF_BLOCKING},
 	{"multiplayersync", GameScript::MultiPlayerSync, 0},
 	{"nidspecial1", GameScript::NIDSpecial1,AF_BLOCKING|AF_DIRECT|AF_ALIVE},//we use this for dialogs, hack
 	{"nidspecial2", GameScript::NIDSpecial2,AF_BLOCKING},//we use this for worldmap, another hack
@@ -1283,8 +1283,6 @@ static const IDSLink idsnames[] = {
 	{ NULL,NULL}
 };
 
-static int NextTriggerObjectID = 0;
-
 template<typename L, typename L2>
 static const L* FindLink(StringView name, const L2& names)
 {
@@ -1425,6 +1423,7 @@ static void SetupTriggers()
 		if (wasCondition) {
 			triggerflags[i] |= TF_CONDITION;
 		}
+		if (name.find("o:") != std::string::npos) triggerflags[i] |= TF_HAS_OBJECT;
 	}
 
 	// retry resolving previously missing triggers
@@ -1480,6 +1479,7 @@ static void SetupActions()
 		}
 		actions[i] = poi->Function;
 		actionflags[i] = poi->Flags;
+		if (name.find("o:") != std::string::npos) actionflags[i] |= AF_HAS_OBJECT;
 	}
 
 	// retry resolving previously missing actions
@@ -1582,11 +1582,13 @@ static void SetupOverrideActions()
 		}
 		actions[i] = poi->Function;
 		actionflags[i] = poi->Flags;
+		if (name.find("o:") != std::string::npos) actionflags[i] |= AF_HAS_OBJECT;
 	}
 }
 
 static void SetupOverrideTriggers()
 {
+	NextTriggerObjectID = 0;
 	size_t max = overrideTriggersTable->GetSize();
 	for (size_t j = 0; j < max; j++) {
 		int i = overrideTriggersTable->GetValueIndex(j);
@@ -1623,6 +1625,7 @@ static void SetupOverrideTriggers()
 		}
 		triggers[i] = poi->Function;
 		triggerflags[i] = tf;
+		if (trName.find("o:") != std::string::npos) triggerflags[i] |= TF_HAS_OBJECT;
 	}
 }
 
@@ -1794,163 +1797,6 @@ Script* GameScript::CacheScript(const ResRef& resRef, bool AIScript)
 	return newScript;
 }
 
-static int ParseInt(const char*& src)
-{
-	char number[33];
-
-	char* tmp = number;
-	int i = 1;
-	while (isdigit(*src) || *src=='-') {
-		if (i == 33) {
-			Log(ERROR, "GameScript", "Truncating too big integer!");
-			break;
-		}
-		*tmp = *src;
-		tmp++;
-		src++;
-		i++;
-	}
-	*tmp = 0;
-	if (*src)
-		src++;
-	return atoi( number );
-}
-
-static void ParseString(const char*& src, char* tmp)
-{
-	while (*src != '"' && *src) {
-		*tmp = *src;
-		tmp++;
-		src++;
-	}
-	*tmp = 0;
-	if (*src)
-		src++;
-}
-
-static Object* DecodeObject(const std::string& line)
-{
-	const char* cursor = line.c_str();
-
-	Object* oB = new Object();
-	for (int i = 0; i < ObjectFieldsCount; i++) {
-		oB->objectFields[i] = ParseInt(cursor);
-	}
-	for (int i = 0; i < MaxObjectNesting; i++) {
-		oB->objectFilters[i] = ParseInt(cursor);
-	}
-	//iwd tolerates the missing rectangle, so we do so too
-	if (HasAdditionalRect && (*cursor == '[') ) {
-		cursor++; //Skip [
-		int tmp[4];
-		for (int& i : tmp) {
-			i = ParseInt(cursor);
-		}
-		oB->objectRect = Region(tmp[0], tmp[1], tmp[2] - tmp[0], tmp[3] - tmp[1]);
-		if (*cursor == ' ')
-			cursor++; //Skip ] (not really... it skips a ' ' since the ] was skipped by the ParseInt function
-	}
-	if (*cursor == '"')
-		cursor++; //Skip "
-	ParseString(cursor, oB->objectName.begin());
-	// HACK for iwd2 AddExperiencePartyCR
-	if (oB->objectName == "0.0.0.0 ") {
-		oB->objectName.Reset();
-		Log(DEBUG, "GameScript", "overriding: +{}+", oB->objectName);
-	}
-	if (*cursor == '"')
-		cursor++; //Skip " (the same as above)
-	//this seems to be needed too
-	if (ExtraParametersCount && *cursor) {
-		cursor++;
-	}
-	for (int i = 0; i < ExtraParametersCount; i++) {
-		oB->objectFields[i + ObjectFieldsCount] = ParseInt(cursor);
-	}
-	if (*cursor != 'O' || *(cursor + 1) != 'B') {
-		Log(WARNING, "GameScript", "Got confused parsing object line: {}", line);
-	}
-	//let the object realize it has no future (in case of null objects)
-	if (oB->isNull()) {
-		oB->Release();
-		return NULL;
-	}
-	return oB;
-}
-
-static Trigger* ReadTrigger(DataStream* stream)
-{
-	std::string line;
-	stream->ReadLine(line);
-	if (line.compare(0, 2, "TR") != 0) {
-		return nullptr;
-	}
-	stream->ReadLine(line);
-	Trigger* tR = new Trigger();
-	//this exists only in PST?
-	if (HasTriggerPoint) {
-		sscanf(line.data(), "%hu %d %d %d %d [%d,%d] \"%[^\"]\" \"%[^\"]\" OB",
-			&tR->triggerID, &tR->int0Parameter, &tR->flags,
-			&tR->int1Parameter, &tR->int2Parameter, &tR->pointParameter.x,
-			&tR->pointParameter.y, tR->string0Parameter.begin(), tR->string1Parameter.begin());
-	} else {
-		sscanf(line.data(), "%hu %d %d %d %d \"%[^\"]\" \"%[^\"]\" OB",
-			&tR->triggerID, &tR->int0Parameter, &tR->flags,
-			&tR->int1Parameter, &tR->int2Parameter, tR->string0Parameter.begin(),
-			tR->string1Parameter.begin());
-	}
-	StringToLower(tR->string0Parameter);
-	StringToLower(tR->string1Parameter);
-	tR->triggerID &= 0x3fff;
-	stream->ReadLine(line);
-	tR->objectParameter = DecodeObject( line );
-	stream->ReadLine(line);
-	//discard invalid triggers, so they won't cause a crash
-	if (tR->triggerID>=MAX_TRIGGERS) {
-		delete tR;
-		return NULL;
-	}
-	return tR;
-}
-
-static Condition* ReadCondition(DataStream* stream)
-{
-	std::string line;
-	stream->ReadLine(line, 10);
-	if (line.compare(0, 2, "CO") != 0) {
-		return nullptr;
-	}
-	Condition* cO = new Condition();
-	Object *triggerer = NULL;
-	while (true) {
-		Trigger* tR = ReadTrigger( stream );
-		if (!tR) {
-			if (triggerer) delete triggerer;
-			break;
-		}
-
-		// handle NextTriggerObject
-		/* Defines the object that the next trigger will be evaluated in reference to. This trigger
-		 * does not evaluate and does not count as a trigger in an OR() block. This trigger ignores
-		 * the Eval() trigger when finding the next trigger to evaluate the object for. If the object
-		 * cannot be found, the next trigger will evaluate to false.
-		 */
-		if (triggerer) {
-			delete tR->objectParameter; // not using Release, so we don't have to check if it's null
-			tR->objectParameter = triggerer;
-			triggerer = NULL;
-		} else if (tR->triggerID == NextTriggerObjectID) {
-			triggerer = tR->objectParameter;
-			tR->objectParameter = NULL;
-			delete tR;
-			continue;
-		}
-
-		cO->triggers.push_back( tR );
-	}
-	return cO;
-}
-
 /*
  * if you pass non-NULL parameters, continuing is set to whether we Continue()ed
  * (should start false and be passed to next script's Update),
@@ -1992,15 +1838,18 @@ bool GameScript::Update(bool *continuing, bool *done)
 					return false;
 				}
 
-				if (lastAction == a) {
+				if (lastResponseBlock == a) {
+					// don't interrupt if the already running block still matches
+					// eg. a Wait in the middle of the response would eventually cause a recheck of conditions
 					// we presumably don't want any further execution?
 					// this one is a bit more complicated, due to possible
-					// interactions with Continue() (lastAction here is always
+					// interactions with Continue() (lastResponseBlock here is always
 					// the first block encountered), needs more testing
-					// BG2 needs this, however... (eg. spirit trolls trollsp01 in ar1506)
-					// previously we thought iwd:totlm needed this bit, but it turns out only iwd2 does (bg2 breaks with it)
-					// targos goblins misbehave without it; see https://github.com/gemrb/gemrb/issues/344 for the gory details
-					if (core->HasFeature(GFFlags::RULES_3ED) && done) {
+					// we've had a colorful history with this block (look at GF_SKIPUPDATE_HACK), but:
+					// - bg2 *does* need this (ar1516 irenicus fight doesn't work properly otherwise); spirit trolls (trollsp01 in ar1506) work regardless
+					// - iwd2 targos goblins misbehave without it; see https://github.com/gemrb/gemrb/issues/344 for the gory details
+					// - previously we thought iwd:totlm needed this bit (ar9708 djinni never becoming visible, but that's also fine now)
+					if (done) {
 						*done = true;
 					}
 					return false;
@@ -2012,7 +1861,7 @@ bool GameScript::Update(bool *continuing, bool *done)
 				// yes we must :)
 				MySelf->Stop();
 			}
-			lastAction = a;
+			lastResponseBlock = a;
 		}
 		running = true;
 		continueExecution = rB->responseSet->Execute(MySelf) != 0;
@@ -2091,92 +1940,6 @@ void GameScript::EvaluateAllBlocks(bool testConditions)
 		// NOTE: this will break blocking instants, if there are any
 		target->ReleaseCurrentAction();
 	}
-}
-
-ResponseBlock* GameScript::ReadResponseBlock(DataStream* stream)
-{
-	std::string line;
-	stream->ReadLine(line, 10);
-	if (line.compare(0, 2, "CR") != 0) {
-		return nullptr;
-	}
-	ResponseBlock* rB = new ResponseBlock();
-	rB->condition = ReadCondition( stream );
-	rB->responseSet = ReadResponseSet( stream );
-	return rB;
-}
-
-ResponseSet* GameScript::ReadResponseSet(DataStream* stream)
-{
-	std::string line;
-	stream->ReadLine(line, 10);
-	if (line.compare(0, 2, "RS") != 0) {
-		return nullptr;
-	}
-	ResponseSet* rS = new ResponseSet();
-	while (true) {
-		Response* rE = ReadResponse( stream );
-		if (!rE)
-			break;
-		rS->responses.push_back( rE );
-	}
-	return rS;
-}
-
-//this is the border of the GameScript object (all subsequent functions are library functions)
-//we can't make this a library function, because scriptlevel is set here
-Response* GameScript::ReadResponse(DataStream* stream)
-{
-	std::string line;
-	stream->ReadLine(line);
-	if (line.compare(0, 2, "RE") != 0) {
-		return nullptr;
-	}
-	Response* rE = new Response();
-	rE->weight = 0;
-	stream->ReadLine( line, 1024 );
-	char *poi;
-	rE->weight = strtounsigned<uint8_t>(line.c_str(), &poi, 10);
-	if (strncmp(poi, "AC", 2) != 0) {
-		return rE;
-	}
-
-	while (true) {
-		//not autofreed, because it is referenced by the Script
-		Action* aC = new Action(false);
-		stream->ReadLine( line, 1024 );
-		aC->actionID = strtounsigned<uint16_t>(line.c_str(), nullptr, 10);
-		for (int i = 0; i < 3; i++) {
-			stream->ReadLine( line, 1024 );
-			Object* oB = DecodeObject( line );
-			aC->objects[i] = oB;
-			if (i != 2)
-				stream->ReadLine( line, 1024 );
-		}
-		stream->ReadLine(line);
-		sscanf(line.data(), "%d %d %d %d %d\"%[^\"]\" \"%[^\"]\" AC",
-			&aC->int0Parameter, &aC->pointParameter.x, &aC->pointParameter.y,
-			&aC->int1Parameter, &aC->int2Parameter, aC->string0Parameter.begin(),
-			aC->string1Parameter.begin());
-		StringToLower(aC->string0Parameter);
-		StringToLower(aC->string1Parameter);
-		if (aC->actionID>=MAX_ACTIONS) {
-			aC->actionID=0;
-			Log(ERROR, "GameScript", "Invalid script action ID!");
-		} else {
-			if (actionflags[aC->actionID] & AF_SCRIPTLEVEL) {
-				//can't set this here, because the same script may be loaded
-				//into different slots. Overwriting it with an invalid value
-				//just to find bugs faster
-				aC->int0Parameter = -1;
-			}
-		}
-		rE->actions.push_back( aC );
-		stream->ReadLine(line);
-		if (line.compare(0, 2, "RE") == 0)
-			break;
-	}
-	return rE;
 }
 
 void GameScript::ExecuteString(Scriptable* Sender, std::string string)
@@ -2324,24 +2087,38 @@ int ResponseSet::Execute(Scriptable* Sender)
 }
 
 //continue is effective only as the last action in the block
+// in iwd2, unlike the rest, instants do get immediately executed
+// (if continue will be used, this happens regardless of the queue)
+// we know in bg2 this is not the case (c829de45), hence people getting confused why
+// SetGlobal calls don't affect conditions after their block was continued from
 int Response::Execute(Scriptable* Sender)
 {
+	static bool startActive = core->HasFeature(GFFlags::START_ACTIVE);
 	int ret = 0; // continue or not
+	if (actions.empty()) return ret;
+
+	bool iwd2 = core->HasFeature(GFFlags::EFFICIENT_OR);
+	const Action* last = actions.back();
+	bool hasContinue = false;
+	if (iwd2 && actionflags[last->actionID] & AF_CONTINUE) {
+		hasContinue = true;
+	}
+
 	for (size_t i = 0; i < actions.size(); i++) {
 		Action* aC = actions[i];
-		switch (actionflags[aC->actionID] & AF_MASK) {
-			case AF_IMMEDIATE:
-				GameScript::ExecuteAction( Sender, aC );
-				ret = 0;
-				break;
-			case AF_NONE:
-				Sender->AddAction( aC );
-				ret = 0;
-				break;
-			case AF_CONTINUE: // this is never reached, since Continue also has AF_IMMEDIATE
-			case AF_MASK:
-				ret = 1;
-				break;
+		bool iwd2Instant = hasContinue && actionflags[aC->actionID] & AF_INSTANT;
+		if ((actionflags[aC->actionID] & AF_MASK) == AF_IMMEDIATE || iwd2Instant) {
+			// mimicking AddAction
+			Sender->SetInternalFlag(IF_ACTIVE, BitOp::OR);
+			if (startActive) Sender->SetInternalFlag(IF_IDLE, BitOp::NAND);
+			GameScript::ExecuteAction(Sender, aC);
+			ret = 0;
+		} else if ((actionflags[aC->actionID] & AF_MASK) == AF_NONE) {
+			Sender->AddAction(aC);
+			ret = 0;
+		} else if ((actionflags[aC->actionID] & AF_MASK) == AF_MASK) {
+			// covers also AF_CONTINUE, since Continue, the only user, also has AF_IMMEDIATE
+			ret = 1;
 		}
 	}
 	return ret;
@@ -2417,10 +2194,11 @@ void GameScript::ExecuteAction(Scriptable* Sender, Action* aC)
 
 	// check for ActionOverride
 	// actions use the second and third object, so this is only set when overridden (see GenerateActionCore)
-	if (aC->objects[0]) {
-		Scriptable* scr = GetScriptableFromObject(Sender, aC->objects[0]);
+	const Object* overrider = aC->objects[0];
+	if (overrider) {
+		Scriptable* scr = GetScriptableFromObject(Sender, overrider);
 		if (CheckDeadException(scr, actionID)) {
-			scr = GetScriptableFromObject(Sender, aC->objects[0], GA_NO_DEAD);
+			scr = GetScriptableFromObject(Sender, overrider, GA_NO_DEAD);
 		}
 		aC->IncRef(); // if aC is us, we don't want it deleted!
 		Sender->ReleaseCurrentAction();
@@ -2433,9 +2211,13 @@ void GameScript::ExecuteAction(Scriptable* Sender, Action* aC)
 			ScriptDebugLog(DebugMode::ACTIONS, "Sender {} ran ActionOverride on {}", Sender->GetScriptName(), scr->GetScriptName());
 			HandleActionOverride(scr, aC);
 		} else {
-			Log(ERROR, "GameScript", "ActionOverride failed for object and action: ");
-			aC->objects[0]->dump();
-			aC->dump();
+			// skip showing errors when party size is lower than the (original) max
+			bool pc = overrider->objectFilters[0] >= 21 && overrider->objectFilters[0] < 27; // Player2-Player6
+			if (!pc) {
+				Log(ERROR, "GameScript", "ActionOverride failed for object and action: ");
+				overrider->dump();
+				aC->dump();
+			}
 		}
 		aC->Release();
 		return;
@@ -2451,20 +2233,9 @@ void GameScript::ExecuteAction(Scriptable* Sender, Action* aC)
 		AppendFormat(buffer, "Sender: {}\n", Sender->GetScriptName());
 		Log(WARNING, "GameScript", "{}", buffer);
 	}
+
 	ActionFunction func = actions[actionID];
-	if (func) {
-		// turning off interruptible flag
-		// uninterruptible actions will set it back
-		if (Sender->Type==ST_ACTOR) {
-			Sender->Activate();
-			if (actionflags[actionID] & AF_ALIVE && Sender->GetInternalFlag() & IF_STOPATTACK) {
-				Log(WARNING, "GameScript", "{}", "Aborted action due to death!");
-				Sender->ReleaseCurrentAction();
-				return;
-			}
-		}
-		func( Sender, aC );
-	} else {
+	if (!func) {
 		actions[actionID] = NoAction;
 		std::string buffer("Unknown ");
 		PrintAction(buffer, actionID);
@@ -2472,6 +2243,18 @@ void GameScript::ExecuteAction(Scriptable* Sender, Action* aC)
 		Sender->ReleaseCurrentAction();
 		return;
 	}
+
+	// turning off interruptible flag
+	// uninterruptible actions will set it back
+	if (Sender->Type == ST_ACTOR) {
+		Sender->Activate();
+		if (actionflags[actionID] & AF_ALIVE && Sender->GetInternalFlag() & IF_STOPATTACK) {
+			Log(WARNING, "GameScript", "{}", "Aborted action due to death!");
+			Sender->ReleaseCurrentAction();
+			return;
+		}
+	}
+	func(Sender, aC);
 
 	//don't bother with special flow control actions
 	if (actionflags[actionID] & AF_IMMEDIATE) {
@@ -2491,83 +2274,6 @@ void GameScript::ExecuteAction(Scriptable* Sender, Action* aC)
 		//aC is invalid beyond this point, so we return!
 		return;
 	}
-}
-
-Trigger* GenerateTrigger(std::string string)
-{
-	StringToLower(string);
-	ScriptDebugLog(DebugMode::TRIGGERS, "Compiling: '{}'", string);
-
-	int negate = 0;
-	strpos_t start = 0;
-	if (string[start] == '!') {
-		++start;
-		negate = TF_NEGATE;
-	}
-	strpos_t len = string.find_first_of('(', start) + 1 - start; // including (
-	int i = triggersTable->FindString(StringView(string.c_str() + start, len));
-	if (i<0) {
-		Log(ERROR, "GameScript", "Invalid scripting trigger: '{}'", string);
-		return NULL;
-	}
-	const char *src = string.c_str() + start + len;
-	const char *str = triggersTable->GetStringIndex(i).c_str() + len;
-	Trigger *trigger = GenerateTriggerCore(src, str, i, negate);
-	if (!trigger) {
-		Log(ERROR, "GameScript", "Malformed scripting trigger: '{}'", string);
-		return NULL;
-	}
-	return trigger;
-}
-
-Action* GenerateAction(std::string actionString)
-{
-	Action* action = NULL;
-	
-	StringToLower(actionString);
-	ScriptDebugLog(DebugMode::ACTIONS, "Compiling: '{}'", actionString);
-
-	auto len = actionString.find_first_of('(') + 1; //including (
-	assert(len != std::string::npos);
-	const char *src = &actionString[len];
-	int i = -1;
-	const char *str;
-	unsigned short actionID;
-	StringView key(actionString.data(), len);
-	if (overrideActionsTable) {
-		i = overrideActionsTable->FindString(key);
-		if (i >= 0) {
-			str = overrideActionsTable->GetStringIndex(i).c_str() + len;
-			actionID = static_cast<unsigned short>(overrideActionsTable->GetValueIndex(i));
-		}
-	}
-	if (i<0) {
-		i = actionsTable->FindString(key);
-		if (i < 0) {
-			Log(ERROR, "GameScript", "Invalid scripting action: '{}'", actionString);
-			return action;
-		}
-		str = actionsTable->GetStringIndex(i).c_str() + len;
-		actionID = static_cast<unsigned short>(actionsTable->GetValueIndex(i));
-	}
-	action = GenerateActionCore( src, str, actionID);
-	if (!action) {
-		Log(ERROR, "GameScript", "Malformed scripting action: '{}'", actionString);
-	}
-
-	return action;
-}
-
-Action *GenerateActionDirect(std::string string, const Scriptable *object)
-{
-	Action* action = GenerateAction(std::move(string));
-	if (!action) return NULL;
-	Object *tmp = action->objects[1];
-	if (tmp && tmp->objectFields[0]==-1) {
-		tmp->objectFields[1] = object->GetGlobalID();
-	}
-	action->pointParameter.Invalidate();
-	return action;
 }
 
 std::string Object::dump(bool print) const

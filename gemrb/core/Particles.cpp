@@ -166,8 +166,7 @@ void Particles::Draw(Point p)
 	const Game *game = core->GetGame();
 
 	if (owner) {
-		p.x-=pos.x;
-		p.y-=pos.y;
+		p -= pos.origin;
 	}
 	ieWord i = size;
 	while (i--) {
@@ -283,6 +282,11 @@ int Particles::Update()
 	if (phase==P_EMPTY) {
 		return drawn;
 	}
+
+	// emulate 30 FPS
+	tick_t time = GetMilliseconds();
+	if (time - lastUpdate < 1000 / 30) return drawn;
+	lastUpdate = time;
 
 	if (timetolive) {
 		if (timetolive<core->GetGame()->GameTime) {

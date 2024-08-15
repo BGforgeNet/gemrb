@@ -123,9 +123,9 @@ static void GetButton(DataStream* str, Control*& ctrl, const Region& ctrlFrame, 
 		if (cycleSize == 4) disabledIndex = 3;
 	}
 	tspr = bam->GetFrame(selectedIndex, cycle);
-	btn->SetImage(ButtonImage::Selected, tspr);
+	btn->SetImage(ButtonImage::Selected, std::move(tspr));
 	tspr = bam->GetFrame(disabledIndex, cycle);
-	btn->SetImage(ButtonImage::Disabled, tspr);
+	btn->SetImage(ButtonImage::Disabled, std::move(tspr));
 
 	return;
 }
@@ -175,8 +175,8 @@ static void GetProgressbar(DataStream* str, Control*& ctrl, const Region& ctrlFr
 		ResourceHolder<ImageMgr> mos = gamedata->GetResourceHolder<ImageMgr>(bamFile);
 		img3 = mos->GetSprite2D();
 	}
-	pbar->SetBackground(img);
-	pbar->SetImages(img2, img3);
+	pbar->SetBackground(std::move(img));
+	pbar->SetImages(std::move(img2), std::move(img3));
 }
 
 static void GetSlider(DataStream* str, Control*& ctrl, const Region& ctrlFrame)
@@ -263,7 +263,7 @@ static void GetTextEdit(DataStream* str, Control*& ctrl, const Region& ctrlFrame
 	TextEdit* te = new TextEdit(ctrlFrame, maxInput, pos);
 	ctrl = te;
 	te->SetFont(std::move(fnt));
-	te->SetCursor(cursor);
+	te->SetCursor(std::move(cursor));
 	te->SetBackground(bgMos, TextEditBG::Normal);
 	te->SetBackground(editingMos, TextEditBG::Editing);
 	te->SetBackground(overMos, TextEditBG::Over);
@@ -378,10 +378,8 @@ static void GetScrollbar(DataStream* str, Control*& ctrl, const Region& ctrlFram
 			ta->SetScrollbar(sb);
 		} else {
 			ctrl = sb;
-			// NOTE: we dont delete this, because there are at least a few instances
-			// where the CHU has this assigned to a text area even tho there isnt one! (BG1 GUISTORE:RUMORS, PST ContainerWindow)
-			// set them invisible instead, we will unhide them in the scripts that need them
-			sb->SetVisible(false);
+			// NOTE: we delete some of these manually on the python side, since some of
+			// them are needed, but don't have the ID set to 0xffff
 		}
 		// we still allow GUIScripts to get ahold of it
 		RegisterScriptableControl(sb, controlID);
@@ -432,7 +430,7 @@ Window* CHUImporter::GetWindow(ScriptingId wid) const
 			bg = mos->GetSprite2D();
 		}
 	}
-	win->SetBackground(bg);
+	win->SetBackground(std::move(bg));
 
 	for (unsigned int i = 0; i < controlsCount; i++) {
 		Control* ctrl = nullptr;

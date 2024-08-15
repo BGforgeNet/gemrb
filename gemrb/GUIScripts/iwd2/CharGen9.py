@@ -121,6 +121,8 @@ def BioPress():
 	Button.SetText (36788)
 	Button.OnPress (BioCancelPress)
 
+	Window.DeleteControl (3)
+
 	EditControl = Window.GetControl (4)
 	BioData = GemRB.GetToken("BIO")
 	if BioData == "":
@@ -215,7 +217,8 @@ def NextPress():
 	GemRB.SetPlayerStat (MyChar, IE_EA, 2 )
 	GemRB.SetPlayerName (MyChar, GemRB.GetToken ("CHARNAME"), 0)
 
-	# feats are set already in the Feats step
+	# feats are set already in the Feats step, but not all their consequences, since users could backpedal
+	IDLUCommon.LearnFeatInnates (MyChar, MyChar, True)
 
 	#does all the rest
 	LargePortrait = GemRB.GetToken ("LargePortrait")

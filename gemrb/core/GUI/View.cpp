@@ -141,14 +141,6 @@ void View::InvalidateSubviews(const Region& rgn) const
 	}
 }
 
-void View::SetVisible(bool vis) {
-	SetFlags(Invisible, vis ? BitOp::NAND : BitOp::OR);
-
-	if (superView != nullptr) {
-		superView->MarkDirty();
-	}
-}
-
 bool View::IsVisible() const
 {
 	bool isVisible = !(flags&Invisible);
@@ -181,11 +173,15 @@ Regions View::DirtySuperViewRegions() const
 	// if we are opaque we cover everything and dont care about the superview
 	// if we arent but we need to redraw then we simply report our entire area
 
-	if (IsOpaque() || frame.size.IsInvalid()) {
+	if (IsOpaque()) {
+		return {};
+	}
+	// HACK to ignore scrollbars, but not windows #2099
+	if (!IsVisible() && frame.size.IsInvalid() && frame.size.h < 400) {
 		return {};
 	}
 
-	if (NeedsDraw()) {
+	if (NeedsDraw() || !IsVisible()) {
 		return { frame };
 	}
 

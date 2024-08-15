@@ -33,6 +33,7 @@ static float pseudoAtan2(float y, float x)
 {
 	static const uint32_t signMask = 0x80000000;
 	static const float b = 0.596227F;
+	if (x == 0 && y == 0) return -M_PI_2;
 
 	// Extract the sign bits
 	uint32_t xS = signMask & (uint32_t&) x;
@@ -60,6 +61,7 @@ float_t AngleFromPoints(const Point& p1, const Point& p2, bool exact)
 {
 	float_t xdiff = p1.x - p2.x;
 	float_t ydiff = p1.y - p2.y;
+	if (xdiff == 0 && ydiff == 0) return -M_PI_2;
 
 	float_t angle;
 	if (exact) {

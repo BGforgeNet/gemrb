@@ -726,9 +726,10 @@ void Map::UpdateScripts()
 	ieDword time = game->Ticks; // make sure everything moves at the same time
 
 	//Run actor scripts (only for 0 priority)
-	size_t q = queue[PR_SCRIPT].size();
+	const auto& runQueue = queue[int(Priority::RunScripts)];
+	size_t q = runQueue.size();
 	while (q--) {
-		Actor* actor = queue[PR_SCRIPT][q];
+		Actor* actor = runQueue[q];
 		//actor just moved away, don't run its script from this side
 		if (actor->GetCurrentArea()!=this) {
 			continue;
@@ -790,9 +791,10 @@ void Map::UpdateScripts()
 	}
 
 	//clean up effects on dead actors too
-	q = queue[PR_DISPLAY].size();
+	const auto& displayQueue = queue[int(Priority::Display)];
+	q = displayQueue.size();
 	while(q--) {
-		Actor* actor = queue[PR_DISPLAY][q];
+		Actor* actor = displayQueue[q];
 		actor->fxqueue.Cleanup();
 	}
 
@@ -837,10 +839,11 @@ void Map::UpdateScripts()
 			continue;
 		}
 
-		q = queue[PR_SCRIPT].size();
+		const auto& runQueue = queue[int(Priority::RunScripts)];
+		q = runQueue.size();
 		ieDword exitID = ip->GetGlobalID();
 		while (q--) {
-			Actor *actor = queue[PR_SCRIPT][q];
+			Actor* actor = runQueue[q];
 			if (ip->Type == ST_PROXIMITY) {
 				if (ip->Entered(actor)) {
 					// if trap triggered, then mark actor
@@ -1036,13 +1039,13 @@ Container* Map::GetNextPile(size_t& index) const
 Actor *Map::GetNextActor(int &q, size_t &index) const
 {
 	while (true) {
-		switch(q) {
-			case PR_SCRIPT:
+		switch (Priority(q)) {
+			case Priority::RunScripts:
 				if (index--)
 					return queue[q][index];
 				q--;
 				return nullptr;
-			case PR_DISPLAY:
+			case Priority::Display:
 				if (index--)
 					return queue[q][index];
 				q--;
@@ -1232,7 +1235,7 @@ void Map::DrawMap(const Region& viewport, FogRenderer& fogRenderer, uint32_t dFl
 	//drawing queues 1 and 0
 	//starting with lower priority
 	//so displayed, but inactive actors (dead) will be drawn over
-	int q = PR_DISPLAY;
+	int q = int(Priority::Display);
 	size_t index = queue[q].size();
 	Actor* actor = GetNextActor(q, index);
 
@@ -1284,22 +1287,20 @@ void Map::DrawMap(const Region& viewport, FogRenderer& fogRenderer, uint32_t dFl
 		case AOT_PILE:
 			// draw piles
 			if (!bgoverride) {
-				const Container* c = TMap->GetContainer(pileIdx - 1);
-				
-				BlitFlags flags = SetDrawingStencilForScriptable(c, viewport);
+				BlitFlags flags = SetDrawingStencilForScriptable(pile, viewport);
 				flags |= BlitFlags::COLOR_MOD | BlitFlags::BLENDED;
 				
 				if (timestop) {
 					flags |= BlitFlags::GREY;
 				}
 				
-				Color tint = GetLighting(c->Pos);
+				Color tint = GetLighting(pile->Pos);
 				game->ApplyGlobalTint(tint, flags);
 
-				if (c->Highlight || (debugFlags & DEBUG_SHOW_CONTAINERS)) {
-					c->Draw(true, viewport, tint, flags);
+				if (pile->Highlight || (debugFlags & DEBUG_SHOW_CONTAINERS)) {
+					pile->Draw(true, viewport, tint, flags);
 				} else {
-					c->Draw(false, viewport, tint, flags);
+					pile->Draw(false, viewport, tint, flags);
 				}
 				pile = GetNextPile(pileIdx);
 			}
@@ -1941,7 +1942,7 @@ void Map::MarkVisited(const Actor *actor) const
 void Map::AddActor(Actor* actor, bool init)
 {
 	//setting the current area for the actor as this one
-	actor->Area = scriptName;
+	actor->AreaName = scriptName;
 	if (!HasActor(actor)) {
 		actors.push_back( actor );
 	}
@@ -1981,7 +1982,7 @@ void Map::DeleteActor(size_t idx)
 		ClearSearchMapFor( actor );
 		//remove the area reference from the actor
 		actor->SetMap(NULL);
-		actor->Area.Reset();
+		actor->AreaName.Reset();
 		objectStencils.erase(actor);
 		//don't destroy the object in case it is a persistent object
 		//otherwise there is a dead reference causing a crash on save
@@ -2697,20 +2698,20 @@ bool Map::BehindWall(const Point& pos, const Region& r) const
 	return !polys.first.empty();
 }
 
-int Map::SetPriority(Actor* actor, bool& hostilesNew, ieDword gameTime) const
+Priority Map::SetPriority(Actor* actor, bool& hostilesNew, ieDword gameTime) const
 {
 	ieDword stance = actor->GetStance();
 	ieDword internalFlag = actor->GetInternalFlag();
 	bool scheduled = actor->Schedule(gameTime, false);
 
-	int priority;
+	Priority priority;
 	if (internalFlag & IF_ACTIVE) {
 		if (stance == IE_ANI_TWITCH && (internalFlag & IF_IDLE)) {
-			priority = PR_DISPLAY; // only draw
+			priority = Priority::Display; // only draw
 		} else if (scheduled) {
-			priority = PR_SCRIPT; // run scripts and display
+			priority = Priority::RunScripts; // run scripts and display
 		} else {
-			priority = PR_IGNORE; // don't run scripts for out of schedule actors
+			priority = Priority::Ignore; // don't run scripts for out of schedule actors
 		}
 
 		if (IsVisible(actor->Pos) && !actor->GetStat(IE_AVATARREMOVAL)) {
@@ -2718,12 +2719,12 @@ int Map::SetPriority(Actor* actor, bool& hostilesNew, ieDword gameTime) const
 		}
 		// dead actors are always visible on the map, but run no scripts
 	} else if (stance == IE_ANI_TWITCH || stance == IE_ANI_DIE) {
-		priority = PR_DISPLAY;
+		priority = Priority::Display;
 	} else {
 		bool visible = IsVisible(actor->Pos);
 		// even if a creature is offscreen, they should still get an AI update every 3 ticks
 		if (scheduled && (visible || actor->ForceScriptCheck()))  {
-			priority = PR_SCRIPT; // run scripts and display, activated now
+			priority = Priority::RunScripts; // run scripts and display, activated now
 			// more like activate!
 			actor->Activate();
 			if (visible && !actor->GetStat(IE_AVATARREMOVAL)) {
@@ -2731,7 +2732,7 @@ int Map::SetPriority(Actor* actor, bool& hostilesNew, ieDword gameTime) const
 				hostilesNew |= HandleAutopauseForVisible(actor, !hostilesVisible);
 			}
 		} else {
-			priority = PR_IGNORE;
+			priority = Priority::Ignore;
 		}
 	}
 	return priority;
@@ -2742,11 +2743,11 @@ int Map::SetPriority(Actor* actor, bool& hostilesNew, ieDword gameTime) const
 void Map::GenerateQueues()
 {
 	unsigned int i=(unsigned int) actors.size();
-	for (int priority = 0; priority < QUEUE_COUNT; priority++) {
+	for (const Priority priority : EnumIterator<Priority, Priority::RunScripts, Priority::Ignore>()) {
 		if (lastActorCount[priority] != i) {
 			lastActorCount[priority] = i;
 		}
-		queue[priority].clear();
+		queue[int(priority)].clear();
 	}
 
 	ieDword gametime = core->GetGame()->GameTime;
@@ -2759,11 +2760,10 @@ void Map::GenerateQueues()
 			continue;
 		}
 
-		int priority = SetPriority(actor, hostilesNew, gametime);
-		//we ignore priority 2
-		if (priority>=PR_IGNORE) continue;
+		Priority priority = SetPriority(actor, hostilesNew, gametime);
+		if (priority >= Priority::Ignore) continue;
 
-		queue[priority].push_back(actor);
+		queue[int(priority)].push_back(actor);
 	}
 	hostilesVisible = hostilesNew;
 }
@@ -2900,7 +2900,7 @@ void Map::RemoveActor(Actor* actor)
 			actor->ClearPath(true);
 			ClearSearchMapFor(actor);
 			actor->SetMap(NULL);
-			actor->Area.Reset();
+			actor->AreaName.Reset();
 			actors.erase( actors.begin()+i );
 			return;
 		}
@@ -2910,7 +2910,7 @@ void Map::RemoveActor(Actor* actor)
 
 //returns true if none of the partymembers are on the map
 //and noone is trying to follow the party out
-bool Map::CanFree()
+bool Map::CanFree() const
 {
 	for (const auto& actor : actors) {
 		if (actor->IsPartyMember()) {
@@ -2940,8 +2940,6 @@ bool Map::CanFree()
 			return false;
 		}
 	}
-	//we expect the area to be swapped out, so we simply remove the corpses now
-	PurgeArea(false);
 	return true;
 }
 
@@ -3221,7 +3219,8 @@ bool Map::SpawnCreature(const Point& pos, const ResRef& creResRef, const Size& r
 		}
 	}
 
-	while (count--) {
+	while (count) {
+		--count;
 		Actor* creature = gamedata->GetCreature(sg ? (*sg)[count] : creResRef);
 		if (!creature) {
 			continue;
@@ -3308,13 +3307,13 @@ void Map::UpdateSpawns() const
 	}
 	ieDword time = core->GetGame()->GameTime;
 	for (auto spawn : spawns) {
-		if ((spawn->Method & (SPF_NOSPAWN|SPF_WAIT)) == (SPF_NOSPAWN|SPF_WAIT)) {
-			//only reactivate the spawn point if the party cannot currently see it;
-			//also make sure the party has moved away some
-			if (spawn->NextSpawn < time && !IsVisible(spawn->Pos) &&
-				!GetActorInRadius(spawn->Pos, GA_NO_DEAD|GA_NO_ENEMY|GA_NO_NEUTRAL|GA_NO_UNSCHEDULED, SPAWN_RANGE * 2)) {
-				spawn->Method &= ~SPF_WAIT;
-			}
+		if ((spawn->Method & (SPF_NOSPAWN | SPF_WAIT)) != (SPF_NOSPAWN | SPF_WAIT)) continue;
+
+		// only reactivate the spawn point if the party cannot currently see it;
+		// also make sure the party has moved away some
+		if (spawn->NextSpawn < time && !IsVisible(spawn->Pos) &&
+		    !GetActorInRadius(spawn->Pos, GA_NO_DEAD | GA_NO_ENEMY | GA_NO_NEUTRAL | GA_NO_UNSCHEDULED, SPAWN_RANGE * 2)) {
+			spawn->Method &= ~SPF_WAIT;
 		}
 	}
 }
@@ -3771,9 +3770,9 @@ void Map::ClearTrap(Actor *actor, ieDword InTrap) const
 
 void Map::SetTrackString(ieStrRef strref, int flg, int difficulty)
 {
-	trackString = strref;
-	trackFlag = flg;
-	trackDiff = (ieWord) difficulty;
+	tracking.text = strref;
+	tracking.enabled = flg;
+	tracking.difficulty = difficulty;
 }
 
 bool Map::DisplayTrackString(const Actor *target) const
@@ -3786,21 +3785,21 @@ bool Map::DisplayTrackString(const Actor *target) const
 	if (core->HasFeature(GFFlags::RULES_3ED)) {
 		// ~Wilderness Lore check. Wilderness Lore (skill + D20 roll + WIS modifier) =  %d vs. ((Area difficulty pct / 5) + 10) = %d ( Skill + WIS MOD = %d ).~
 		skill += target->LuckyRoll(1, 20, 0) + target->GetAbilityBonus(IE_WIS);
-		success = skill > (trackDiff/5 + 10);
+		success = skill > (tracking.difficulty / 5 + 10);
 	} else {
 		skill += (target->GetStat(IE_LEVEL)/3)*5 + target->GetStat(IE_WIS)*5;
-		success = core->Roll(1, 100, trackDiff) > skill;
+		success = core->Roll(1, 100, tracking.difficulty) > skill;
 	}
 	if (!success) {
 		displaymsg->DisplayConstantStringName(HCStrings::TrackingFailed, GUIColors::LIGHTGREY, target);
 		return true;
 	}
-	if (trackFlag) {
-			core->GetTokenDictionary()["CREATURE"] = core->GetString(trackString);
-			displaymsg->DisplayConstantStringName(HCStrings::Tracking, GUIColors::LIGHTGREY, target);
-			return false;
+	if (tracking.enabled) {
+		core->GetTokenDictionary()["CREATURE"] = core->GetString(tracking.text);
+		displaymsg->DisplayConstantStringName(HCStrings::Tracking, GUIColors::LIGHTGREY, target);
+		return false;
 	}
-	displaymsg->DisplayStringName(trackString, GUIColors::LIGHTGREY, target, STRING_FLAGS::NONE);
+	displaymsg->DisplayStringName(tracking.text, GUIColors::LIGHTGREY, target, STRING_FLAGS::NONE);
 	return false;
 }
 

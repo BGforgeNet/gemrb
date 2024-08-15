@@ -20,8 +20,8 @@
 
 #include "AREImporter.h"
 
-#include "strrefs.h"
 #include "ie_cursors.h"
+#include "strrefs.h"
 
 #include "ActorMgr.h"
 #include "Ambient.h"
@@ -33,13 +33,12 @@
 #include "GameData.h"
 #include "ImageMgr.h"
 #include "Interface.h"
-#include "PathFinder.h"
-#include "Palette.h"
 #include "PluginMgr.h"
 #include "ProjectileServer.h"
 #include "RNG.h"
-#include "Plugins/TileMapMgr.h"
+
 #include "GameScript/GameScript.h"
+#include "Plugins/TileMapMgr.h"
 #include "Scriptable/Container.h"
 #include "Scriptable/Door.h"
 #include "Scriptable/InfoPoint.h"
@@ -59,14 +58,7 @@ using namespace GemRB;
 //something non signed, non ascii
 #define UNINITIALIZED_BYTE  0x11
 
-struct ResRefToStrRef {
-	ResRef areaName;
-	ieStrRef text;
-	bool trackFlag;
-	int difficulty;
-};
-
-static std::vector<ResRefToStrRef> tracks;
+static std::vector<TrackingData> tracks;
 PluginHolder<DataFileMgr> INInote;
 
 static void ReadAutonoteINI()
@@ -145,10 +137,10 @@ static int GetTrackString(const ResRef &areaName)
 		for (TableMgr::index_t i = 0; i < trackcount; i++) {
 			const char *poi = tm->QueryField(i,0).c_str();
 			if (poi[0]=='O' && poi[1]=='_') {
-				tracks[i].trackFlag=false;
+				tracks[i].enabled = false;
 				poi+=2;
 			} else {
-				tracks[i].trackFlag = trackFlag;
+				tracks[i].enabled = trackFlag;
 			}
 			tracks[i].text = ieStrRef(atoi(poi));
 			tracks[i].difficulty = tm->QueryFieldSigned<int>(i,1);
@@ -282,7 +274,7 @@ static TileProps MakeTileProps(const TileMap* tm, const ResRef& wedref, bool day
 		propit.WriteRGBA(r, g, b, a);
 	}
 
-	return TileProps(propImg);
+	return TileProps(std::move(propImg));
 }
 
 bool AREImporter::Import(DataStream* str)
@@ -721,6 +713,18 @@ void AREImporter::GetInfoPoint(DataStream* str, int idx, Map* map) const
 	} else {
 		ip->Scripts[0] = new GameScript(script0, ip);
 	}
+
+	if (ip->Type != ST_TRAVEL || !ip->outline) return;
+	// mark the searchmap under travel regions as passable (not travel)
+	for (int i = 0; i < ip->BBox.w; i += 8) {
+		for (int j = 0; j < ip->BBox.h; j += 6) {
+			NavmapPoint sample(ip->BBox.x + i, ip->BBox.y + j);
+			if (!ip->outline->PointIn(sample)) continue;
+			SearchmapPoint below = Map::ConvertCoordToTile(sample);
+			PathMapFlags tmp = map->tileProps.QuerySearchMap(below);
+			map->tileProps.PaintSearchMap(below, tmp | PathMapFlags::PASSABLE);
+		}
+	}
 }
 
 void AREImporter::GetContainer(DataStream* str, int idx, Map* map)
@@ -942,7 +946,7 @@ void AREImporter::GetDoor(DataStream* str, int idx, Map* map, PluginHolder<TileM
 	auto closedPolys = tmm->ClosedDoorPolygons();
 	auto openPolys = tmm->OpenDoorPolygons();
 
-	DoorTrigger dt(open, std::move(openPolys), closed, std::move(closedPolys));
+	DoorTrigger dt(std::move(open), std::move(openPolys), std::move(closed), std::move(closedPolys));
 	Door* door = map->TMap->AddDoor(shortName, longName, doorFlags, baseClosed, std::move(indices), std::move(dt));
 	door->OpenBBox = openedBBox;
 	door->ClosedBBox = closedBBox;
@@ -1163,7 +1167,7 @@ bool AREImporter::GetActor(DataStream* str, PluginHolder<ActorMgr> actorMgr, Map
 			}
 		}
 	}
-	act->DifficultyMargin = difficultyMargin;
+	act->ignoredFields.difficultyMargin = difficultyMargin;
 
 	if (!dialog.IsEmpty()) {
 		act->SetDialog(dialog);
@@ -1481,7 +1485,7 @@ Map* AREImporter::GetMap(const ResRef& resRef, bool day_or_night)
 	map->MasterArea = core->GetGame()->MasterArea(map->GetScriptRef());
 	int idx = GetTrackString(resRef);
 	if (idx>=0) {
-		map->SetTrackString(tracks[idx].text, tracks[idx].trackFlag, tracks[idx].difficulty);
+		map->SetTrackString(tracks[idx].text, tracks[idx].enabled, tracks[idx].difficulty);
 	} else {
 		map->SetTrackString(ieStrRef(-1), false, 0);
 	}
@@ -1886,10 +1890,11 @@ int AREImporter::PutDoors(DataStream *stream, const Map *map, ieDword &VertIndex
 
 		stream->WriteVariable(d->GetScriptName());
 		stream->WriteResRef( d->ID);
+		ieDword flags = d->Flags;
 		if (map->version == 16) {
-			d->Flags = FixIWD2DoorFlags(d->Flags, true);
+			flags = FixIWD2DoorFlags(d->Flags, true);
 		}
-		stream->WriteDword(d->Flags);
+		stream->WriteDword(flags);
 		stream->WriteDword(VertIndex);
 		auto open = d->OpenTriggerArea();
 		ieWord tmpWord = static_cast<ieWord>(open ? open->Count() : 0);
@@ -2185,7 +2190,7 @@ int AREImporter::PutActors(DataStream *stream, const Map *map) const
 		stream->WriteDword(0); //used fields flag always 0 for saved areas
 		stream->WriteWord(ac->Spawned);
 		stream->WriteFilling(1); // letter
-		stream->WriteScalar(ac->DifficultyMargin);
+		stream->WriteScalar(ac->ignoredFields.difficultyMargin);
 		stream->WriteDword(0); //actor animation, unused
 		stream->WriteWord(ac->GetOrientation());
 		stream->WriteWord(0); //unknown

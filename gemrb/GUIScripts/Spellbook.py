@@ -58,6 +58,8 @@ def GetUsableMemorizedSpells(actor, BookType):
 				continue
 			spellResRefs.append (resref)
 			Spell = GemRB.GetSpell(resref)
+			if not Spell:
+				continue
 			Spell['BookType'] = BookType # just another sorting key
 			Spell['SpellIndex'] = GemRB.GetSpelldataIndex (actor, Spell["SpellResRef"], 1<<BookType) # crucial!
 			if Spell['SpellIndex'] == -1:
@@ -545,7 +547,7 @@ def HasSorcererBook (pc, cls=-1):
 		return False
 	return IsSorcererBook (SorcererBook)
 
-def CannotLearnSlotSpell ():
+def CannotLearnSlotSpell (si = None):
 	pc = GemRB.GameGetSelectedPCSingle ()
 
 	# disqualify sorcerers immediately
@@ -556,7 +558,7 @@ def CannotLearnSlotSpell ():
 	if GameCheck.IsIWD2():
 		booktype = IE_IWD2_SPELL_WIZARD
 
-	slot_item = GemRB.GetSlotItem (pc, GemRB.GetVar ("ItemButton"))
+	slot_item = si if si else GemRB.GetSlotItem (pc, GemRB.GetVar ("ItemButton"))
 	spell_ref = GemRB.GetItem (slot_item['ItemResRef'])['Spell']
 	spell = GemRB.GetSpell (spell_ref)
 	level = spell['SpellLevel']
@@ -568,13 +570,14 @@ def CannotLearnSlotSpell ():
 	if HasSpell (pc, booktype, level-1, spell_ref) != -1:
 		return LSR_KNOWN
 
-	# level check (needs enough intelligence for this level of spell)
+	# level check on core+ difficulties (needs enough intelligence for this level of spell)
 	dumbness = GemRB.GetPlayerStat (pc, IE_INT)
-	if level > GemRB.GetAbilityBonus (IE_INT, 1, dumbness):
+	hard = GemRB.GetVar ("Difficulty Level") >= 3
+	if hard and level > GemRB.GetAbilityBonus (IE_INT, 1, dumbness):
 		return LSR_LEVEL
 
 	spell_count = GemRB.GetKnownSpellsCount (pc, booktype, level-1)
-	if spell_count >= GemRB.GetAbilityBonus (IE_INT, 2, dumbness):
+	if not GameCheck.IsIWD2 () and spell_count >= GemRB.GetAbilityBonus (IE_INT, 2, dumbness):
 		return LSR_FULL
 
 	return 0

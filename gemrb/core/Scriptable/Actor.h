@@ -26,6 +26,7 @@
 #include "Scriptable/PCStatStruct.h"
 
 #include "exports.h"
+#include "ie_feats.h"
 #include "ie_stats.h" // using definitions as described in stats.ids
 #include "ie_types.h"
 #include "strrefs.h"
@@ -71,7 +72,6 @@ enum CREVersion {
 
 #define MAX_STATS 256
 #define MAX_LEVEL 128
-#define MAX_FEATS 96 //3*sizeof(ieDword)
 
 //lucky roll
 #define LR_CRITICAL    1
@@ -118,20 +118,23 @@ enum class Modal : ieWord {
 #define GD_CHECK       1
 #define GD_FEEDBACK    2 //(also check)
 
-//Panic modes
-#define PANIC_NONE       0
-#define PANIC_BERSERK    1
-#define PANIC_RUNAWAY    2
-#define PANIC_RANDOMWALK 3
+enum class PanicMode {
+	None,
+	Berserk,
+	RunAway,
+	RandomWalk
+};
 
 //Game Difficulty
-#define DIFF_DEFAULT       0
-#define DIFF_EASY          1
-#define DIFF_NORMAL        2
-#define DIFF_CORE          3
-#define DIFF_HARD          4
-#define DIFF_INSANE        5
-#define DIFF_NIGHTMARE     6 // rather check against the ini var where needed
+enum class Difficulty {
+	Default,
+	Easy,
+	Normal,
+	Core,
+	Hard,
+	Insane,
+	Nightmare // rather check against the ini var where needed
+};
 
 /** flags for GetActor */
 //default action
@@ -330,7 +333,6 @@ struct SaveInfo {
 };
 
 struct TimerData {
-	ieDword lastExit = 0; // the global ID of the exit to be used
 	ieDword lastOverrideCheck = 0; // confusion timer to limit overriding actions to once per round
 	ieDword lastAttack = 0; // time of the last attack
 	ieDword nextAttack = 0; // time of our next attack
@@ -345,6 +347,25 @@ struct TimerData {
 	tick_t lastFatigueCheck = 0;
 	tick_t remainingTalkSoundTime = 0;
 	tick_t lastTalkTimeCheckAt = 0;
+	// delay all maxhp checks until we completely load all effects
+	// set after modifying maxhp, adjusts hp next tick
+	int checkHP = 2;
+	// to determine that a tick has passed
+	ieDword checkHPTime = 0;
+};
+
+// misc fields we (currently) only load and save to maintain save compatibility
+struct IgnoredFields {
+	ieByte unknownIWDByte1 = 0;
+	ieByte difficultyMargin = 0; // only used in iwd2, but resolved on load
+	/**
+	 * We don't know how to profit of them, but PST needs them saved.
+	 * Otherwise, some actors are badly drawn, like TNO but not Morte.
+	 * bit 0 for a "plasma" effect: palette color entries shift by one index position per cycle update
+	 * bit 1 is for enabling pulsating for the particular color range (we store them in IE_COLOR*)
+	 *   it periodically reduces brightness to ~50% and back to full
+	 */
+	ieByte pstColorBytes[10] {};
 };
 
 enum DamageFlags {
@@ -438,7 +459,6 @@ public:
 	ieByteSigned DeathCounters[4]{}; // PST specific (good, law, lady, murder)
 
 	ResRef BardSong;               //custom bard song (updated by fx)
-	ResRef BackstabResRef = "*";         //apply on successful backstab
 
 	std::unique_ptr<PCStatsStruct> PCStats;
 	PCStatsStruct::StateArray previousStates;
@@ -459,7 +479,6 @@ public:
 	// boolean fields from iwd1 and iwd2
 	ieByte SetDeathVar = 0;
 	ieByte IncKillCount = 0;
-	ieByte UnknownField = 0;
 
 	Inventory inventory;
 	Spellbook spellbook;
@@ -471,29 +490,22 @@ public:
 	//which keep a matrix of counters
 	ieDword InteractCount = 0; // this is accessible in iwd2, probably exists in other games too
 	ieDword appearance = 0xffffff; // schedule
-	ArmorClass AC;
-	ToHitStats ToHit;
-	WeaponInfo weaponInfo[2]{};
 	ModalState Modal{};
 	TimerData Timers {};
+	IgnoredFields ignoredFields {};
 
-	bool usedLeftHand = false; // which weaponInfo index was used in an attack last
+	ieDword lastExit = 0; // the global ID of the exit to be used
 	ieVariable UsedExit; // name of the exit, since global id is not stable after loading a new area
 	ResRef LastArea;
 	AnimRef ShieldRef;
 	AnimRef HelmetRef;
 	AnimRef WeaponRef;
-	unsigned char WeaponType = 0;
 	ieDword multiclass = 0;
 	bool GotLUFeedback = false;
 	int WMLevelMod = 0;
 
-	int LastDamageType = 0;
-	int LastDamage = 0;
 	Point FollowOffset;//follow lastfollowed at this offset
 	bool Spawned = false; // has been created by a spawn point
-
-	ieDword TargetDoor = 0;
 
 	EffectQueue fxqueue;
 	
@@ -501,28 +513,22 @@ public:
 	vvcSet vfxQueue = vvcSet(VVCSort); // sorted so we can distinguish effects infront and behind
 	std::vector<bool> projectileImmunity; // classic bitfield
 	Holder<SoundHandle> casting_sound;
-	ieDword panicMode = PANIC_NONE;  // runaway, berserk or randomwalk
-	//how many attacks left in this round, must be public for cleave opcode
-	int attackcount = 0;
+	PanicMode panicMode = PanicMode::None; // runaway, berserk or randomwalk
+
+	// public combat related data
+	ArmorClass AC;
+	ToHitStats ToHit;
+	WeaponInfo weaponInfo[2] {};
+	int attackcount = 0; // how many attacks left in this round, must be public for cleave opcode
+	bool usedLeftHand = false; // which weaponInfo index was used in an attack last
+	int LastDamageType = 0;
+	int LastDamage = 0;
+	ResRef BackstabResRef = "*"; // apply on successful backstab
 
 	PolymorphCache* polymorphCache = nullptr; // fx_polymorph etc
 	WildSurgeSpellMods wildSurgeMods{};
-	ieByte DifficultyMargin = 0;
 	ieDword* spellStates = nullptr;
-	// delay all maxhp checks until we completely load all effects
-	// set after modifying maxhp, adjusts hp next tick
-	int checkHP = 2;
-	// to determine that a tick has passed
-	ieDword checkHPTime = 0;
-	/**
-	 * We don't know how to profit of them, but PST needs them saved.
-	 * Otherwise, some actors are badly drawn, like TNO but not Morte.
-	 * bit 0 for a "plasma" effect: palette color entries shift by one index position per cycle update
-	 * bit 1 is for enabling pulsating for the particular color range (we store them in IE_COLOR*)
-	 *   it periodically reduces brightness to ~50% and back to full
-	 */
-	ieByte pstColorBytes[10]{};
-	
+
 	Region drawingRegion;
 private:
 	String LongName;
@@ -541,15 +547,16 @@ private:
 	int walkScale = 0;
 	// true when command has been played after select
 	bool playedCommandSound = false;
-	//true every second round of attack
-	bool secondround = false;
-	int attacksperround = 0;
+
 	//trap we're trying to disarm
 	ieDword disarmTrap = 0;
 	ieDword InTrap = 0;
+
 	char AttackStance = 0;
-	/*The projectile bringing the current attack*/
-	Projectile* attackProjectile = nullptr;
+	Projectile* attackProjectile = nullptr; // regular weapon payload projectile
+	bool secondround = false; // true every second round of attack
+	int attacksperround = 0;
+
 	/** paint the actor itself. Called internally by Draw() */
 	void DrawActorSprite(const Point& p, BlitFlags flags,
 						 const std::vector<AnimationPart>& anims, const Color& tint) const;
@@ -618,7 +625,7 @@ public:
 	/** sets the actor's position, calculating with the nojump flag*/
 	void SetPosition(const Point& nmptTarget, bool jump, const Size& radius = Size(), int size = -1);
 	/** you better use SetStat, this stuff is only for special cases*/
-	void SetAnimationID(unsigned int AnimID);
+	void SetAnimationID(stat_t animID);
 	/** returns the animations */
 	CharAnimations* GetAnims() const;
 	/** returns the gender of actor for cg sound - illusions are tricky */
@@ -642,8 +649,6 @@ public:
 	stat_t GetSafeStat(unsigned int StatIndex) const;
 	/** Sets a Stat Value (unsaved) */
 	bool SetStat(unsigned int StatIndex, stat_t Value, int pcf);
-	/** Returns the difference */
-	int GetMod(unsigned int StatIndex) const;
 	/** Returns a Stat Base Value */
 	ieDword GetBase(unsigned int StatIndex) const;
 	/** Sets a Base Stat Value */
@@ -725,7 +730,7 @@ public:
 	/** handle idle actions, that shouldn't mess with scripting */
 	void IdleActions(bool nonidle);
 	/* sets the actor in panic (turn/morale break) */
-	void Panic(const Scriptable *attacker, int panicmode);
+	void Panic(const Scriptable* attacker, PanicMode mode);
 	/* sets a multi class flag (actually this is a lot of else too) */
 	void SetMCFlag(ieDword bitmask, BitOp op);
 	/* inlined dialogue start */
@@ -935,12 +940,12 @@ public:
 	/* Sets equipped Quick slot, if header is -1, then use the current one */
 	HCStrings SetEquippedQuickSlot(int slot, int header);
 	/* Uses an item on the target or point */
-	bool TryUsingMagicDevice(const Item* item, ieDword header);
+	bool TryUsingMagicDevice(const Item* item, int header);
 	bool RequiresUMD(const Item* item) const;
-	bool UseItemPoint(ieDword slot, ieDword header, const Point &point, ieDword flags);
-	bool UseItem(ieDword slot, ieDword header, const Scriptable *target, ieDword flags, int damage = 0);
+	bool UseItemPoint(ieDword slot, int header, const Point& point, ieDword flags);
+	bool UseItem(ieDword slot, int header, const Scriptable* target, ieDword flags, int damage = 0);
 	/* Deducts a charge from an item */
-	void ChargeItem(ieDword slot, ieDword header, CREItem *item, const Item *itm, bool silent, bool expend = true);
+	void ChargeItem(ieDword slot, int header, CREItem* item, const Item* itm, bool silent, bool expend = true);
 	/* If it returns true, then default AC=10 and the lesser the better */
 	static int IsReverseToHit();
 	/* initialize the action buttons based on class. If forced, it will override
@@ -950,9 +955,9 @@ public:
 	int GetAbilityBonus(unsigned int ability, int value = -1) const;
 	int GetSkillStat(unsigned int skill) const;
 	int GetSkill(unsigned int skill, bool ids=false) const;
-	int GetFeat(unsigned int feat) const;
-	void SetFeat(unsigned int feat, BitOp mode);
-	void SetFeatValue(unsigned int feat, int value, bool init = true);
+	int GetFeat(Feat idx) const;
+	void SetFeat(Feat feat, BitOp mode);
+	void SetFeatValue(Feat idx, int value, bool init = true);
 	void SetUsedWeapon(AnimRef, const std::array<ieWord, 3>& meleeAnimation,
 		unsigned char WeaponType = IE_ANI_WEAPON_INVALID);
 	void SetUsedShield(AnimRef, unsigned char WeaponType = IE_ANI_WEAPON_INVALID);
@@ -973,7 +978,7 @@ public:
 	/* Checks a spellstate */
 	bool HasSpellState(unsigned int spellstate) const;
 	/* Checks a feat */
-	bool HasFeat(unsigned int featindex) const;
+	bool HasFeat(Feat feat) const;
 	/* Reports projectile immunity, nonzero if immune */
 	ieDword ImmuneToProjectile(ieDword projectile) const;
 	/* Sets projectile immunity */
@@ -991,7 +996,7 @@ public:
 	/* Checks if the actor is dualclassed */
 	bool IsDualClassed() const;
 	/* Returns an exact copy of this actor */
-	Actor *CopySelf(bool mislead) const;
+	Actor* CopySelf(bool mislead, bool effects = true) const;
 	static ieDword GetClassID(ieDword isClass);
 	const std::string& GetClassName(ieDword classID) const;
 	const std::string& GetKitName(ieDword kitID) const;
@@ -1042,7 +1047,7 @@ public:
 	/* checks if the alignment matches one of the masking constants */
 	//bool MatchesAlignmentMask(ieDword mask);
 	/** untargetable by spells/attack due to invisibility or sanctuary */
-	bool Untargetable(const ResRef& spellRef) const;
+	bool Untargetable(const ResRef& spellRef, const Actor* source) const;
 	/* returns true if this it is futile to try to harm actor (dead/sanctuaried) */
 	bool InvalidSpellTarget() const;
 	/* returns true if the spell is useless to cast on target
@@ -1067,7 +1072,7 @@ public:
 	int GetTotalArmorFailure() const;
 	int GetArmorFailure(int &armor, int &shield) const;
 	bool ShouldStopAttack() const;
-	bool IsInvisibleTo(const Scriptable *checker) const;
+	bool IsInvisibleTo(const Scriptable* checker, int flags = 5) const;
 	int UpdateAnimationID(bool derived);
 	void MovementCommand(std::string command);
 	/* shows hp/maxhp as overhead text */

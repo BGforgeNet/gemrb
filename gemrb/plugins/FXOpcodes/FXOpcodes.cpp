@@ -1139,6 +1139,7 @@ int fx_set_berserk_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	switch(fx->Parameter2) {
 	case 1: //always berserk
 		target->SetSpellState(SS_BERSERK);
+		EXTSTATE_SET(EXTSTATE_BERSERK);
 		STAT_SET(IE_BERSERKSTAGE2, 1);
 		// intentional fallthrough
 	default:
@@ -1767,27 +1768,46 @@ int fx_intelligence_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 // 0x14 State:Invisible
 // this is more complex, there is a half-invisibility state
 // and there is a hidden state
-int fx_set_invisible_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
+int fx_set_invisible_state(Scriptable* Owner, Actor* target, Effect* fx)
 {
 	switch (fx->Parameter2) {
-	case 1:
-			STATE_SET(STATE_INVIS2); // TODO: actually use STATE_INVIS2 in code
-			// intentional fallthrough
-	case 0:
+	case 0: // normal
 		if (core->HasFeature(GFFlags::PST_STATE_FLAGS)) {
-			STATE_SET( STATE_PST_INVIS );
+			STATE_SET(STATE_PST_INVIS);
 		} else {
-			STATE_SET( STATE_INVISIBLE );
+			STATE_SET(STATE_INVISIBLE);
 		}
 		if (fx->FirstApply || fx->TimingMode != FX_DURATION_INSTANT_PERMANENT) {
-			target->ToHit.HandleFxBonus(4, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
+			target->ToHit.HandleFxBonus(4, fx->TimingMode == FX_DURATION_INSTANT_PERMANENT);
 		}
+		break;
+	case 1: // improved
+		// in the originals the improved invisibility spells included two opcodes
+		if (fx->FirstApply && core->HasFeature(GFFlags::HAS_EE_EFFECTS)) {
+			Effect* invisibility = EffectQueue::CreateEffectCopy(fx, fx_set_invisible_state_ref, 0, 0);
+			core->ApplyEffect(invisibility, target, Owner);
+		}
+		// changes to "weak invisibility" once detected, allowing weapon attacks, since the
+		// regular invisibility is gone, but not spell attacks
+		// this is done in Actor::CureInvisibility in case any user would care about the Parameter2 difference
+		STATE_SET(STATE_INVIS2);
 		break;
 	case 2:// EE: weak invisibility, like improved after being revealed (no backstabbing)
 		STATE_SET(STATE_INVIS2);
+		break;
 	default:
 		break;
 	}
+
+	if (fx->Parameter2 > 0 && core->HasFeature(GFFlags::HAS_EE_EFFECTS)) {
+		// unpopular, but they hardcoded the saving throw bonuses in the ees to avoid stacking issues
+		HandleBonus(target, IE_SAVEVSDEATH, 4, fx->TimingMode);
+		HandleBonus(target, IE_SAVEVSWANDS, 4, fx->TimingMode);
+		HandleBonus(target, IE_SAVEVSPOLY, 4, fx->TimingMode);
+		HandleBonus(target, IE_SAVEVSBREATH, 4, fx->TimingMode);
+		HandleBonus(target, IE_SAVEVSSPELL, 4, fx->TimingMode);
+	}
+
 	ieDword Trans = fx->Parameter4;
 	if (fx->Parameter3) {
 		if (Trans >= 240) {
@@ -2232,6 +2252,7 @@ int fx_set_unconscious_state (Scriptable* Owner, Actor* target, Effect* fx)
 		STATE_SET( STATE_HELPLESS | STATE_SLEEP ); //don't awaken on damage
 		if (fx->Parameter2 || !core->HasFeature(GFFlags::HAS_EE_EFFECTS)) {
 			target->SetSpellState(SS_NOAWAKE);
+			EXTSTATE_SET(EXTSTATE_DOESNT_AWAKEN_ON_DAMAGE);
 		}
 		if (fx->IsVariable) {
 			target->SetSpellState(SS_PRONE);
@@ -3065,7 +3086,7 @@ int fx_set_blind_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if (!STATE_GET(STATE_BLIND)) {
 		STATE_SET( STATE_BLIND );
 		//the feat normally exists only in IWD2, but won't hurt
-		if (!target->GetFeat(FEAT_BLIND_FIGHT)) {
+		if (!target->HasFeat(Feat::BlindFight)) {
 			target->AddPortraitIcon(PI_BLIND);
 			if (reverse) {
 				//BG2
@@ -4476,7 +4497,6 @@ int fx_force_visible (Scriptable* /*Owner*/, Actor* target, Effect* /*fx*/)
 		BASE_STATE_CURE(STATE_INVISIBLE);
 	}
 	target->fxqueue.RemoveAllEffectsWithParam(fx_set_invisible_state_ref,0);
-	target->fxqueue.RemoveAllEffectsWithParam(fx_set_invisible_state_ref,2);
 
 	//fix the hiding puppet while mislead bug, by
 	if (target->GetSafeStat(IE_PUPPETTYPE)==1) {
@@ -4601,6 +4621,13 @@ int fx_casting_glow (Scriptable* Owner, Actor* target, Effect* fx)
 		//simulate sparkle casting glows
 		target->ApplyEffectCopy(fx, fx_sparkle_ref, Owner, fx->Parameter2, 3);
 	}
+
+	// Resource contains the termination sound from when used from GameScript::SpellCastEffect
+	// the channel is a guess
+	if (fx->Duration - core->GetGame()->GameTime == 1 && !fx->Resource.IsEmpty()) {
+		core->GetAudioDrv()->Play(fx->Resource, SFXChannel::Hits, target->Pos, GEM_SND_SPATIAL);
+	}
+
 	// TODO: this opcode is also affected by slow/haste
 	return FX_NOT_APPLIED;
 }
@@ -5429,7 +5456,7 @@ int fx_move_to_area (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 				map->RemoveActor( target );
 			}
 			//set the destination area
-			target->Area = fx->Resource;
+			target->AreaName = fx->Resource;
 			return FX_APPLIED;
 		}
 	}
@@ -7438,7 +7465,7 @@ int fx_teleport_to_target (Scriptable* /*Owner*/, Actor* target, Effect* /*fx*/)
 	if (map) {
 		Object oC;
 		oC.objectFields[0]=EA_ENEMY;
-		Targets *tgts = GetAllObjects(map, target, &oC, GA_NO_DEAD);
+		Targets* tgts = GetAllObjects(map, target, &oC, GA_NO_DEAD, false);
 		if (!tgts) {
 			// no enemy to jump to
 			return FX_NOT_APPLIED;
@@ -7693,7 +7720,7 @@ int fx_cutscene2 (Scriptable* /*Owner*/, Actor* /*target*/, Effect* fx)
 			GAMLocationEntry *gle = game->GetSavedLocationEntry(i);
 			if (act && gle) {
 				gle->Pos = act->Pos;
-				gle->AreaResRef = act->Area;
+				gle->AreaResRef = act->AreaName;
 			}
 		}
 		break;
@@ -7706,7 +7733,7 @@ int fx_cutscene2 (Scriptable* /*Owner*/, Actor* /*target*/, Effect* fx)
 			GAMLocationEntry *gle = game->GetPlaneLocationEntry(i);
 			if (act && gle) {
 				gle->Pos = act->Pos;
-				gle->AreaResRef = act->Area;
+				gle->AreaResRef = act->AreaName;
 			}
 		}
 	}
@@ -8196,7 +8223,11 @@ int fx_add_effects_list(Scriptable* Owner, Actor* target, Effect* fx)
 	if (!EffectQueue::CheckIWDTargeting(Owner, target, fx->Parameter1, fx->Parameter2, fx)) {
 		return FX_NOT_APPLIED;
 	}
-	core->ApplySpell(fx->Resource, target, Owner, fx->Power);
+	if (fx->Pos.IsInvalid()) {
+		core->ApplySpell(fx->Resource, target, Owner, fx->Power);
+	} else {
+		core->ApplySpellPoint(fx->Resource, target->GetCurrentArea(), fx->Pos, Owner, fx->Power);
+	}
 	return FX_NOT_APPLIED;
 }
 
@@ -8226,7 +8257,7 @@ int fx_iwd_visual_spell_hit(Scriptable* Owner, Actor* target, Effect* fx)
 	}
 	pro->SetCaster(fx->CasterID, fx->CasterLevel);
 
-	if (target) {
+	if (target && !fx->Parameter4) {
 		// I believe the spell hit projectiles don't follow anyone
 		map->AddProjectile(pro, target->Pos, target->GetGlobalID(), true);
 	} else {
@@ -8271,7 +8302,10 @@ int fx_slow_poison(Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	auto f = target->fxqueue.GetFirstEffect();
 	Effect* poison = target->fxqueue.GetNextEffect(f);
 	while (poison) {
-		if (poison->Opcode != poisonOpcode) continue;
+		if (poison->Opcode != poisonOpcode) {
+			poison = target->fxqueue.GetNextEffect(f);
+			continue;
+		}
 
 		switch (poison->Parameter2) {
 			case RPD_SECONDS:
@@ -8404,6 +8438,7 @@ int fx_static_charge(Scriptable* Owner, Actor* target, Effect* fx)
 		displaymsg->DisplayConstantStringName(HCStrings::StaticDissipate, GUIColors::WHITE, target);
 		return FX_APPLIED;
 	}
+	victim->Modified[IE_EXTSTATE_ID] |= EXTSTATE_STATIC_CHARGE;
 
 	// ee style
 	if (fx->Opcode == 0x14d) {

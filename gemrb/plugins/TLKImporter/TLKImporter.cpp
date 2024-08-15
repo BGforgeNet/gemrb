@@ -118,14 +118,15 @@ bool TLKImporter::Open(DataStream* stream)
 		0	 - PROTAGONIST
 		1-9 - PLAYERx
 */
-static inline Actor *GetActorFromSlot(int slot)
+static inline const Actor* GetActorFromSlot(int slot)
 {
 	if (slot==-1) {
 		const GameControl *gc = core->GetGameControl();
+		const Actor* act = nullptr;
 		if (gc) {
-			return gc->dialoghandler->GetSpeaker();
+			act = gc->dialoghandler->GetSpeaker();
 		}
-		return NULL;
+		return act;
 	}
 	const Game *game = core->GetGame();
 	if (!game) {
@@ -151,6 +152,10 @@ String TLKImporter::CharName(int slot) const
 	const Actor *act = GetActorFromSlot(slot);
 	if (act) {
 		return act->GetName();
+	}
+	if (!act) {
+		act = core->GetFirstSelectedActor();
+		if (act) return act->GetName();
 	}
 	return u"?";
 }

@@ -240,7 +240,8 @@ def OpenFeatsWindow(chargen=0):
 			if Level <= 9 and Level+LevelDiff >= 9:
 				GemRB.SetFeat (pc, FEAT_IMPROVED_EVASION, 1)
 
-	RaceName = CommonTables.Races.GetRowName (Race)
+	RaceIndex = CommonTables.Races.FindValue (3, Race)
+	RaceName = CommonTables.Races.GetRowName (RaceIndex)
 	# could use column ID as well, but they tend to change :)
 	RaceColumn = CommonTables.Races.GetValue(RaceName, "SKILL_COLUMN")
 
@@ -414,10 +415,14 @@ def NextPress(save=1):
 	else:
 		# handle toughness first, since hp is tricky
 		ToughnessDiff = GemRB.GetVar ("Feat 69") - GemRB.GetVar ("BaseFeatValue 69")
+		pc = GemRB.GameGetSelectedPCSingle ()
 		if ToughnessDiff > 0:
-			pc = GemRB.GameGetSelectedPCSingle ()
 			GemRB.SetPlayerStat (pc, IE_MAXHITPOINTS, GemRB.GetPlayerStat (pc, IE_MAXHITPOINTS, 1) + ToughnessDiff * 3, 0)
 			GemRB.SetPlayerStat (pc, IE_HITPOINTS, GemRB.GetPlayerStat (pc, IE_HITPOINTS, 1) + ToughnessDiff * 3, 0)
+
+		# learn the feat spells
+		# for chargen we do it at the last phase instead
+		IDLUCommon.LearnFeatInnates (pc, pc, 2)
 
 		# open up the next levelup window
 		import Spells

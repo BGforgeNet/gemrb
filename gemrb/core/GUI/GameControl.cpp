@@ -288,6 +288,10 @@ void GameControl::CreateMovement(Actor *actor, const Point &p, bool append, bool
 		// check again because GenerateAction can fail (non PST)
 		if (!action) {
 			action = GenerateAction(fmt::format("MoveToPoint([{}.{}])", p.x, p.y));
+			if (overMe && overMe->Type == ST_TRAVEL) {
+				// gemrb extension to make travel through nearly blocked regions less painful
+				action->int0Parameter = MAX_TRAVELING_DISTANCE / 10; // empirical
+			}
 		}
 	}
 
@@ -843,12 +847,13 @@ bool GameControl::OnKeyRelease(const KeyboardEvent& Key, unsigned short Mod)
 {
 	Point gameMousePos = GameMousePos();
 	Highlightable* over = Scriptable::As<Highlightable>(overMe);
+	Game* game = core->GetGame();
+
 	//cheatkeys with ctrl-
 	if (Mod & GEM_MOD_CTRL) {
 		if (!core->CheatEnabled()) {
 			return false;
 		}
-		Game* game = core->GetGame();
 		Map* area = game->GetCurrentArea( );
 		if (!area)
 			return false;
@@ -900,7 +905,7 @@ bool GameControl::OnKeyRelease(const KeyboardEvent& Key, unsigned short Mod)
 				}
 				if (lastActor && !(lastActor->GetStat(IE_MC_FLAGS)&MC_EXPORTABLE)) {
 					int size = game->GetPartySize(true);
-					if (size < 2 || lastActor->GetCurrentArea() != game->GetCurrentArea()) break;
+					if (size < 2 || lastActor->GetCurrentArea() != area) break;
 					for (int i = core->Roll(1, size, 0); i < 2*size; i++) {
 						const Actor *target = game->GetPC(i % size, true);
 						if (target == lastActor) continue;
@@ -930,17 +935,21 @@ bool GameControl::OnKeyRelease(const KeyboardEvent& Key, unsigned short Mod)
 				break;
 			case 'M':
 				DumpActorInfo(ActorDump::Anims, area);
+				FlushLogs();
 				break;
 			case 'm': //prints a debug dump (ctrl-m in the original game too)
 				if (overMe && overMe->Type != ST_ACTOR) {
 					fmt::println("{}", overMe->dump());
-				} else {
+				} else if (lastActor) {
 					DumpActorInfo(ActorDump::Stats, area);
+				} else {
+					area->dump(false);
 				}
-				game->GetCurrentArea()->dump(false);
+				FlushLogs();
 				break;
 			case 'n': //prints a list of all the live actors in the area
-				game->GetCurrentArea()->dump(true);
+				area->dump(true);
+				FlushLogs();
 				break;
 			// o
 			case 'p': //center on actor
@@ -1105,7 +1114,7 @@ bool GameControl::OnKeyRelease(const KeyboardEvent& Key, unsigned short Mod)
 		}
 		return true; //return from cheatkeys
 	}
-	const Game* game = core->GetGame();
+
 	switch (Key.keycode) {
 //FIXME: move these to guiscript
 		case ' ': //soft pause
@@ -1293,6 +1302,7 @@ void GameControl::UpdateCursor()
 	
 	overMe = overDoor = area->TMap->GetDoor(gameMousePos);
 	// ignore infopoints and containers beneath doors
+	// pst mortuary door right above the starting position is a good test
 	if (overDoor) {
 		if (overDoor->Visible()) {
 			nextCursor = overDoor->GetCursor(targetMode, lastCursor);
@@ -1317,8 +1327,12 @@ void GameControl::UpdateCursor()
 			return;
 		}
 
-		if (!overMe) {
-			overMe = overContainer = area->TMap->GetContainer(gameMousePos);
+		// let containers override infopoints if at the same location
+		// needed in bg2 ar0809 or you can't get the loot on the altar
+		// how ar3201 and a bunch in the pst mortuary (eg. near Ei-vene) show it as a usability win as well
+		overContainer = area->TMap->GetContainer(gameMousePos);
+		if (overContainer) {
+			overMe = overContainer;
 		}
 	}
 
@@ -1811,7 +1825,7 @@ void GameControl::TryToCast(Actor *source, const Actor *tgt)
 
 	// cannot target spells on invisible or sanctuaried creatures
 	// invisible actors are invisible, so this is usually impossible by itself, but improved invisibility changes that
-	if (source != tgt && tgt->Untargetable(spellName)) {
+	if (source != tgt && tgt->Untargetable(spellName, source)) {
 		displaymsg->DisplayConstantStringName(HCStrings::NoSeeNoCast, GUIColors::RED, source);
 		ResetTargetMode();
 		return;
@@ -1946,9 +1960,10 @@ void GameControl::HandleDoor(Door *door, Actor *actor)
 	}
 
 	door->AddTrigger(TriggerEntry(trigger_clicked, actor->GetGlobalID()));
-	actor->TargetDoor = door->GetGlobalID();
 	// internal gemrb toggle door action hack - should we use UseDoor instead?
-	actor->CommandActor(GenerateAction("NIDSpecial9()"));
+	Action* toggle = GenerateAction("NIDSpecial9()");
+	toggle->int0Parameter = door->GetGlobalID();
+	actor->CommandActor(toggle);
 }
 
 //generate action code for actor appropriate for the target mode when the target is an active region (infopoint, trap or travel)
@@ -2199,7 +2214,7 @@ bool GameControl::OnMouseUp(const MouseEvent& me, unsigned short Mod)
 			if (mainActor && overMe->Type != ST_TRAVEL) {
 				CreateMovement(mainActor, p, false, tryToRun); // let one actor handle doors, loot and containers
 			} else {
-				CommandSelectedMovement(p, true, false, tryToRun);
+				CommandSelectedMovement(p, overMe->Type != ST_TRAVEL, false, tryToRun);
 			}
 		}
 
@@ -2267,7 +2282,6 @@ void GameControl::PerformSelectedAction(const Point& p)
 				game->selected[i]->UseExit(exitID);
 			}
 		}
-		CommandSelectedMovement(p, false);
 		if (HandleActiveRegion(Scriptable::As<InfoPoint>(overMe), selectedActor, p)) {
 			core->SetEventFlag(EF_RESETTARGET);
 		}
@@ -2550,7 +2564,7 @@ void GameControl::ChangeMap(const Actor *pc, bool forced)
 {
 	//swap in the area of the actor
 	Game* game = core->GetGame();
-	if (forced || (pc && pc->Area != game->CurrentArea)) {
+	if (forced || (pc && pc->AreaName != game->CurrentArea)) {
 		// disable so that drawing and events dispatched doesn't happen while there is not an area
 		// we are single threaded, but game loading runs its own event loop which will cause events/drawing to come in
 		SetDisabled(true);
@@ -2560,7 +2574,7 @@ void GameControl::ChangeMap(const Actor *pc, bool forced)
 		overMe = nullptr;
 		/*this is loadmap, because we need the index, not the pointer*/
 		if (pc) {
-			game->GetMap(pc->Area, true);
+			game->GetMap(pc->AreaName, true);
 		} else {
 			ResRef oldMaster = game->LastMasterArea; // only update it for party travel
 			game->GetMap(game->CurrentArea, true);

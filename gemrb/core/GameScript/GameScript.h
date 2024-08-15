@@ -86,6 +86,7 @@ enum class EscapeArea {
 
 #define ACF_OVERRIDE 1 // was this action invoked via ActionOverride?
 #define ACF_REALLOW_SCRIPTS 0x1000 // gemrb internal
+#define ACF_MISSING_OBJECT  0x2000 // used for detection of [ANYONE], since it has the same signature as no object, but is not the same
 #define ACF_FOLLOW_DONE 0x10000000 // Bubb: written during CGameSprite::Follow(), I believe it means the MoveToPoint() ended with ACTION_DONE
 // NOTE: if it ever becomes useful, this is where it came into play
 // CGameSprite::Follow() is used in the Follow action, as well as when Leader() is used in
@@ -96,6 +97,7 @@ enum class EscapeArea {
 #define TF_NEGATE  1   //negate trigger result
 #define TF_APPLIED 2   //set in living when trigger applied
 #define TF_ADDED   4   //set in scriptable when trigger added/applied
+#define TF_MISSING_OBJECT 8 // used for detection of [ANYONE], since it has the same signature as no object, but is not the same
 
 #define MAX_OBJECT_FIELDS	10
 #define MAX_NESTING		5
@@ -382,6 +384,7 @@ using IDSFunction = int (*)(const Actor*, int parameter);
 #define TF_CONDITION    1 //this isn't a trigger, just a condition (0x4000)
 #define TF_SAVED        2 //trigger is in svtriobj.ids
 #define TF_MERGESTRINGS 8 //same value as actions' mergestring
+#define TF_HAS_OBJECT   16 // whether it has an object parameter
 
 struct TriggerLink {
 	const char* Name;
@@ -437,6 +440,7 @@ struct TriggerLink {
 #define AF_SCR_INSTANT  8192 //instant script actions
 #define AF_INSTANT      (AF_DLG_INSTANT|AF_SCR_INSTANT) //only iwd2 treats them separately; 12288
 #define AF_IWD2_OVERRIDE 16384 // marking actions that require special attention when clearing during ActionOverride
+#define AF_HAS_OBJECT    32768 // whether it has an object parameter
 
 enum RunAwayFlags {
 	LeaveArea = 1,
@@ -447,7 +451,7 @@ enum RunAwayFlags {
 struct ActionLink {
 	const char* Name;
 	ActionFunction Function;
-	short Flags;
+	uint16_t Flags;
 };
 
 struct ObjectLink {
@@ -473,6 +477,7 @@ extern void ScriptDebugLog(DebugMode bit, const char* message, ARGS&&... args)
 	Log(DEBUG, "GameScript", message, std::forward<ARGS>(args)...);
 }
 extern int RandomNumValue;
+extern int NextTriggerObjectID;
 
 class GEM_EXPORT GameScript {
 public:
@@ -497,14 +502,13 @@ private: //Internal Functions
 	ResponseBlock* ReadResponseBlock(DataStream* stream);
 	ResponseSet* ReadResponseSet(DataStream* stream);
 	Response* ReadResponse(DataStream* stream);
-	Trigger* ReadTrigger(DataStream* stream);
 	static int InParty(Scriptable *Sender, const Trigger *parameters, bool allowdead);
 
 	// Internal variables
 	Scriptable* const MySelf;
 	ResRef Name;
 	Script* script;
-	size_t lastAction = -1;
+	size_t lastResponseBlock = -1;
 	int scriptlevel;
 public: //Script Functions
 	static int ID_Alignment(const Actor *actor, int parameter);
@@ -1180,6 +1184,7 @@ public: //Script Functions
 	static void MoveToPointNoRecticle(Scriptable* Sender, Action* parameters);
 	static void MoveToSavedLocation(Scriptable* Sender, Action* parameters);
 	static void MoveViewPoint(Scriptable* Sender, Action* parameters);
+	static void MoveViewPointUntilDone(Scriptable* Sender, Action* parameters);
 	static void MoveViewObject(Scriptable* Sender, Action* parameters);
 	static void MultiPlayerSync(Scriptable* Sender, Action* parameters);
 	static void NIDSpecial1(Scriptable* Sender, Action* parameters);

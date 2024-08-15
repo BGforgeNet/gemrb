@@ -606,6 +606,12 @@ void Inventory::SetSlotItem(CREItem* item, unsigned int slot)
 
 int Inventory::AddSlotItem(CREItem* item, int slot, int slottype, bool ranged)
 {
+	// just dump into containers if a specific slot wasn't requested
+	if (InventoryType == ieInventoryType::HEAP && slot < 0) {
+		AddItem(item);
+		return ASI_SUCCESS;
+	}
+
 	int twohanded = item->Flags&IE_INV_ITEM_TWOHANDED;
 	if (slot >= 0) {
 		if ((unsigned)slot >= Slots.size()) {
@@ -1629,7 +1635,7 @@ void Inventory::BreakItemSlot(ieDword slot)
 	//if it is the magic weapon slot, don't break it, just remove it, because it couldn't be removed
 	//or for pst, just remove it as there is no breaking (the replacement item is a sound)
 	// also don't break ranged weapons (eg. when running out of throwing axes)
-	if (slot == (unsigned int) SLOT_MAGIC || core->HasFeature(GFFlags::HAS_PICK_SOUND) || Owner->weaponInfo[0].wflags & WEAPON_RANGED) {
+	if (slot == (unsigned int) SLOT_MAGIC || core->HasFeature(GFFlags::HAS_PICK_SOUND) || Owner->weaponInfo[Owner->usedLeftHand].wflags & WEAPON_RANGED) {
 		newItem.Reset();
 	} else {
 		newItem = itm->ReplacementItem;
@@ -2000,12 +2006,12 @@ void Inventory::ChargeAllItems(int hours) const
 int Inventory::FindStealableItem()
 {
 	unsigned int slotcnt = Slots.size();
-	unsigned int start = core->Roll(1, slotcnt, -1);
+	int start = core->Roll(1, slotcnt, -1);
 	int inc = start & 1 ? 1 : -1;
 
 	Log(DEBUG, "Inventory", "Start Slot: {}, increment: {}", start, inc);
 	for (unsigned int i = 0; i < slotcnt; ++i) {
-		int slot = (slotcnt - 1 + start + i * inc) % slotcnt;
+		int slot = ((signed) slotcnt - 1 + start + (signed) i * inc) % slotcnt;
 		const CREItem *item = Slots[slot];
 		//can't steal empty slot
 		if (!item) continue;

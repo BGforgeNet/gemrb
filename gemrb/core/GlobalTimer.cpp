@@ -45,6 +45,11 @@ void GlobalTimer::Freeze()
 	game->RealTime++;
 }
 
+bool GlobalTimer::IsFading() const
+{
+	return fadeToCounter || fadeFromCounter != fadeFromMax; // add fadeOutFallback if needed, doesn't seem outright right
+}
+
 bool GlobalTimer::ViewportIsMoving() const
 {
 	return shakeCounter || (!goal.IsInvalid() && goal != currentVP.origin);
@@ -143,6 +148,11 @@ bool GlobalTimer::Update()
 		goto end;
 	}
 
+	// init fallback duration here, since it's not known in the ctor
+	if (lastFadeDuration == 0) {
+		lastFadeDuration = core->Time.fade_default;
+	}
+
 	if (UpdateViewport(thisTime) == false) {
 		return false;
 	}
@@ -155,6 +165,16 @@ bool GlobalTimer::Update()
 	if (!map) {
 		goto end;
 	}
+
+	// don't update scripts if we're fading in or out
+	if (IsFading()) {
+		if (!fadeToCounter) map->UpdateFog(); // needed eg. when meeting Yoshimo for the first time
+		if (thisTime) {
+			game->RealTime++;
+		}
+		return false;
+	}
+
 	//do spell effects expire in dialogs?
 	//if yes, then we should remove this condition
 	if (!gc->InDialog() || !(gc->GetDialogueFlags() & DF_FREEZE_SCRIPTS)) {
@@ -182,11 +202,20 @@ end:
 	return true;
 }
 
-
 void GlobalTimer::DoFadeStep(ieDword count) {
 	WindowManager* wm = core->GetWindowManager();
+	if (fadeOutFallback > 0) {
+		--fadeOutFallback;
+		// activate fallback if no fade out was scheduled
+		if (fadeOutFallback == 0) {
+			wm->FadeColor.a = 0;
+			return;
+		}
+	}
+
 	if (fadeToCounter) {
-		
+		if (fadeOutFallback > 0) ++fadeOutFallback;
+
 		if (count > fadeToCounter) {
 			fadeToCounter = 0;
 			fadeToFactor = 1;
@@ -210,32 +239,36 @@ void GlobalTimer::DoFadeStep(ieDword count) {
 				fadeToCounter=fadeFromMax;
 				fadeToFactor = 1;
 			}
-			wm->FadeColor.a = 255 * (double( fadeFromMax - fadeFromCounter ) / fadeFromMax / fadeFromFactor);
 		}
-	}
-	if (fadeFromCounter==fadeFromMax) {
-		wm->FadeColor.a = 0;
+		wm->FadeColor.a = 255 * (double(fadeFromMax - fadeFromCounter) / fadeFromMax / fadeFromFactor);
 	}
 }
 
 void GlobalTimer::SetFadeToColor(tick_t Count, unsigned short factor)
 {
-	if (!Count) {
-		Count = 2 * core->Time.defaultTicksPerSec;
+	// oddly, if a 0 is passed, the last used duration is used (first time the engine default)
+	if (Count) {
+		lastFadeDuration = Count;
+	} else {
+		Count = lastFadeDuration;
 	}
 	fadeToCounter = Count;
 	fadeToMax = fadeToCounter;
-	//stay black for a while
-	fadeFromCounter = core->Time.fade_reset;
+	// set up a fallback in case FadeFromColor was not called
+	fadeOutFallback = core->Time.fade_reset;
+	fadeFromCounter = 0;
 	fadeFromMax = 0;
 	fadeToFactor = factor;
 }
 
 void GlobalTimer::SetFadeFromColor(tick_t Count, unsigned short factor)
 {
-	if (!Count) {
-		Count = 2 * core->Time.defaultTicksPerSec;
+	if (Count) {
+		lastFadeDuration = Count;
+	} else {
+		Count = lastFadeDuration;
 	}
+	fadeOutFallback = 0;
 	fadeFromCounter = 0;
 	fadeFromMax = Count;
 	fadeFromFactor = factor;

@@ -228,6 +228,8 @@ def GetFavoredClass (pc, code):
 # returns the effective character level modifier
 def GetECL (pc):
 	RaceIndex = IDLUCommon.GetRace (pc)
+	if RaceIndex == None:
+		return 0
 	RaceRowName = CommonTables.Races.GetRowName (RaceIndex)
 	return CommonTables.Races.GetValue (RaceRowName, "ECL")
 
@@ -1090,11 +1092,11 @@ def UpdateHelpWindow ():
 
 	startrow = HelpTable.GetValue (Topic, 4)
 	if startrow<0:
-		i=-startrow-10
-	elif DescTable:
-		i = DescTable.GetRowCount ()-10-startrow
-
-	if i<1: i=1
+		i = -startrow - 10
+	else:
+		if DescTable:
+			i = DescTable.GetRowCount () - 10 - startrow
+		if i < 0: i = 0
 
 	ScrollBar = Window.GetControl (4)
 	ScrollBar.SetVarAssoc ("TopIndex", i)
@@ -1122,8 +1124,10 @@ def RefreshHelpWindow ():
 			Label.SetColor ({'r' : 255, 'g' : 255, 'b' : 0})
 		else:
 			Label.SetColor ({'r' : 255, 'g' : 255, 'b' : 255})
+		title = ""
 		if DescTable:
 			title = DescTable.GetValue (i+startrow+TopIndex, titlecol)
+		if title != "*":
 			Label.SetText (title)
 			Button.SetState (IE_GUI_BUTTON_LOCKED)
 			Button.SetVarAssoc ("Selected", i+TopIndex)

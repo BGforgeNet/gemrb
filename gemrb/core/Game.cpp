@@ -417,10 +417,10 @@ void Game::InitActorPos(Actor *actor) const
 	
 	//start.2da row labels
 	static const std::string mode[PMODE_COUNT] = { "NORMAL", "TUTORIAL", "EXPANSION" };
-	const auto xpos = start->QueryField(mode[playmode],"XPOS");
-	const auto ypos = start->QueryField(mode[playmode],"YPOS");
-	const auto area = start->QueryField(mode[playmode],"AREA");
-	const auto rot = start->QueryField(mode[playmode],"ROT");
+	const auto& xpos = start->QueryField(mode[playmode], "XPOS");
+	const auto& ypos = start->QueryField(mode[playmode], "YPOS");
+	const auto& area = start->QueryField(mode[playmode], "AREA");
+	const auto& rot = start->QueryField(mode[playmode], "ROT");
 
 	actor->Pos.x = actor->Destination.x = strta->QueryFieldSigned<int>(strta->GetRowIndex(xpos), ip);
 	actor->Pos.y = actor->Destination.y = strta->QueryFieldSigned<int>(strta->GetRowIndex(ypos), ip);
@@ -429,9 +429,9 @@ void Game::InitActorPos(Actor *actor) const
 
 	strta = gamedata->LoadTable("startare");
 	if (strta) {
-		actor->Area = strta->QueryField(strta->GetRowIndex(area), 0);
+		actor->AreaName = strta->QueryField(strta->GetRowIndex(area), 0);
 	} else {
-		actor->Area = CurrentArea;
+		actor->AreaName = CurrentArea;
 	}
 }
 
@@ -768,15 +768,24 @@ int Game::DelMap(unsigned int index, int forced)
 
 	// if a familiar isn't executing EscapeArea, it warps to the protagonist
 	for (auto& npc : NPCs) {
+		if (!npc->GetCurrentArea()) continue;
 		if (npc->GetBase(IE_EA) == EA_FAMILIAR && (!npc->GetCurrentAction() || npc->GetCurrentAction()->actionID != 108)) {
 			npc->SetPosition(PCs[0]->Pos, true);
 		}
 	}
 
+	// one last script execution, so the Vacant trigger is more likely to run (pst ar0109)
+	if (core->HasFeature(GFFlags::PST_STATE_FLAGS)) {
+		map->ExecuteScript(MAX_SCRIPTS);
+		map->ProcessActions();
+	}
+
+	map->PurgeArea(false);
+
 	// if there are still selected actors on the map (e.g. summons)
 	// unselect them now before they get axed
 	for (auto m = selected.begin(); m != selected.end();) {
-		if (!(*m)->InParty && (*m)->Area == Maps[index]->GetScriptRef()) {
+		if (!(*m)->InParty && (*m)->AreaName == Maps[index]->GetScriptRef()) {
 			m = selected.erase(m);
 		} else {
 			++m;
@@ -800,7 +809,7 @@ void Game::PlacePersistents(Map *newMap, const ResRef &resRef)
 	// if their max level is still lower than ours, each check would also result in a substitution
 	size_t last = NPCs.size() - 1;
 	for (size_t i = 0; i < NPCs.size(); i++) {
-		if (NPCs[i]->Area == resRef) {
+		if (NPCs[i]->AreaName == resRef) {
 			if (i <= last && CheckForReplacementActor(i)) {
 				i--;
 				last--;
@@ -850,7 +859,7 @@ int Game::LoadMap(const ResRef &resRef, bool loadscreen)
 	// spawn creatures on a map already in the game
 	for (size_t i = 0; i < PCs.size(); i++) {
 		Actor *pc = PCs[i];
-		if (pc->Area == resRef) {
+		if (pc->AreaName == resRef) {
 			newMap->AddActor(pc, false);
 		}
 	}
@@ -913,7 +922,7 @@ bool Game::CheckForReplacementActor(size_t i)
 				newact->Pos = act->Pos; // the map is not loaded yet, so no SetPosition
 				newact->TalkCount = act->TalkCount;
 				newact->InteractCount = act->InteractCount;
-				newact->Area = act->Area;
+				newact->AreaName = act->AreaName;
 				DelNPC(InStore(act), true);
 				return true;
 			}
@@ -1273,7 +1282,9 @@ bool Game::EveryoneNearPoint(const Map *area, const Point &p, int flags) const
 			}
 		}
 
-		if (pc->GetCurrentArea() != area) {
+		const Map* map = pc->GetCurrentArea();
+		if (!map) return true; // ok for familiars
+		if (map != area) {
 			return false;
 		}
 		if (Distance(p, pc) > MAX_TRAVELING_DISTANCE) {
@@ -1715,7 +1726,7 @@ bool Game::CanPartyRest(RestChecks checks, ieStrRef* err) const
 
 	if (checks & RestChecks::InControl) {
 		for (const auto& pc : PCs) {
-			if (pc->GetStat(IE_STATE_ID) & STATE_MINDLESS) {
+			if (pc->GetStat(IE_STATE_ID) & STATE_MINDLESS || pc->GetStat(IE_CHECKFORBERSERK)) {
 				// You cannot rest at this time because you do not have control of all your party members
 				*err = DisplayMessage::GetStringReference(HCStrings::CantRestNoControl);
 				return false;
@@ -2498,7 +2509,7 @@ void Game::MovePCs(const ResRef& targetArea, const Point& targetPoint, int orien
 void Game::MoveFamiliars(const ResRef& targetArea, const Point& targetPoint, int orientation) const
 {
 	for (const auto& npc : NPCs) {
-		if (npc->GetBase(IE_EA) == EA_FAMILIAR) {
+		if (npc->GetBase(IE_EA) == EA_FAMILIAR && npc->GetCurrentArea()) {
 			MoveBetweenAreasCore(npc, targetArea, targetPoint, orientation, true);
 		}
 	}

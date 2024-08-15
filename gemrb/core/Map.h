@@ -263,13 +263,14 @@ public:
 
 enum AnimationObjectType {AOT_AREA, AOT_SCRIPTED, AOT_ACTOR, AOT_SPARK, AOT_PROJECTILE, AOT_PILE};
 
-//i believe we need only the active actors/visible inactive actors queues
-#define QUEUE_COUNT 2
-
 //priorities when handling actors, we really ignore the third one
-#define PR_SCRIPT  0
-#define PR_DISPLAY 1
-#define PR_IGNORE  2
+enum class Priority : uint8_t {
+	RunScripts, // run scripts and display
+	Display, // only draw
+	Ignore, // also queue count
+
+	count
+};
 
 enum MAP_DEBUG_FLAGS : uint32_t {
 	DEBUG_SHOW_INFOPOINTS   	= 0x01,
@@ -288,6 +289,13 @@ enum MAP_DEBUG_FLAGS : uint32_t {
 	DEBUG_SHOW_FOG_UNEXPLORED	= 0x0800,
 	DEBUG_SHOW_FOG_INVISIBLE	= 0x1000,
 	DEBUG_SHOW_FOG_ALL			= (DEBUG_SHOW_FOG_UNEXPLORED|DEBUG_SHOW_FOG_INVISIBLE),
+};
+
+struct TrackingData {
+	ResRef areaName;
+	ieStrRef text = ieStrRef::INVALID;
+	bool enabled = false;
+	int difficulty = 0;
 };
 
 using aniIterator = std::list<AreaAnimation>::iterator;
@@ -372,9 +380,7 @@ public:
 
 private:
 	uint32_t debugFlags = 0;
-	ieStrRef trackString = ieStrRef::INVALID;
-	int trackFlag = 0;
-	ieWord trackDiff = 0;
+	TrackingData tracking;
 
 	std::list<AreaAnimation> animations;
 	std::vector< Actor*> actors;
@@ -386,8 +392,8 @@ private:
 	std::vector< Ambient*> ambients;
 	std::vector<MapNote> mapnotes;
 	std::vector< Spawn*> spawns;
-	std::vector<Actor*> queue[QUEUE_COUNT];
-	unsigned int lastActorCount[QUEUE_COUNT]{};
+	std::vector<Actor*> queue[int(Priority::Ignore)];
+	EnumArray<Priority, unsigned int> lastActorCount;
 	bool hostilesVisible = false;
 
 	VideoBufferPtr wallStencil = nullptr;
@@ -550,7 +556,7 @@ public:
 	ieDword HasVVCCell(const ResRef &resource, const Point &p) const;
 	void AddVVCell(VEFObject* vvc);
 	void AddVVCell(ScriptedAnimation* vvc);
-	bool CanFree();
+	bool CanFree() const;
 	int GetCursor(const Point &p) const;
 	//adds a sparkle puff of colour to a point in the area
 	//FragAnimID is an optional avatar animation ID (see avatars.2da) for
@@ -682,7 +688,7 @@ private:
 
 	void GenerateQueues();
 	void SortQueues();
-	int SetPriority(Actor* actor, bool& hostilesNew, ieDword gameTime) const;
+	Priority SetPriority(Actor* actor, bool& hostilesNew, ieDword gameTime) const;
 	//Actor* GetRoot(int priority, int &index);
 	void DeleteActor(size_t idx);
 	//actor uses travel region

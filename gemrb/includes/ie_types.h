@@ -78,7 +78,12 @@ enum class ieStrRef : ieDword {
 	MD_SUCCESS = 24198,
 	HEAL = 28895,
 	DAMAGE = 22036,
-	
+
+	// iwd2 refs
+	REBUKED = 20827,
+	TURNED = 20828,
+	COMMANDED = 41023,
+
 	// params to DisplayRollStringName
 	ROLL0 = 112,
 	ROLL1 = 20460,
@@ -125,7 +130,7 @@ inline ieVariable MakeVariable(const StringView& sv) {
 		// TODO: we shouldnt call towlower here. ieVariable is case insensitive
 		// we probably should be calling WriteVariableLC in the writers instead
 		char c = std::towlower(*source++);
-		if (!std::isspace(c)) { // FIXME: should whitespace get converted?
+		if (!std::isspace(c)) { // the originals ignored whitespace too
 			*dest++ = c;
 		}
 	}

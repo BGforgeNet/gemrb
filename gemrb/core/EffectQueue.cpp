@@ -343,13 +343,15 @@ Effect *EffectQueue::CreateEffect(ieDword opcode, ieDword param1, ieDword param2
 
 //return the count of effects with matching parameters
 //useful for effects where there is no separate stat to see
-ieDword EffectQueue::CountEffects(EffectRef &effect_reference, ieDword param1, ieDword param2, const ResRef &resource) const
+ieDword EffectQueue::CountEffects(EffectRef& effect_reference, ieDword param1, ieDword param2, const ResRef& resource, const ResRef& source) const
 {
-	Globals::ResolveEffectRef(effect_reference);
-	if( effect_reference.opcode<0) {
-		return 0;
+	if (effect_reference.Name[0]) {
+		Globals::ResolveEffectRef(effect_reference);
+		if (effect_reference.opcode < 0) {
+			return 0;
+		}
 	}
-	return CountEffects(effect_reference.opcode, param1, param2, resource);
+	return CountEffects(effect_reference.opcode, param1, param2, resource, source);
 }
 
 //Change the location of an existing effect
@@ -1014,9 +1016,10 @@ static inline int CheckMagicResistance(const Actor* actor, const Effect* fx, con
 		int roll = core->Roll(1, 20, 0);
 		ieDword check = fx->CasterLevel + roll;
 		int penetration = 0;
-		// +2/+4 level bonus from the (greater) spell penetration feat
-		if (caster && caster->HasFeat(FEAT_SPELL_PENETRATION)) {
-			penetration += 2 * caster->GetStat(IE_FEAT_SPELL_PENETRATION);
+		if (caster) {
+			// +2/+4 level bonus from the (greater) spell penetration feat
+			int feat = caster->GetFeat(Feat::SpellPenetration);
+			penetration += 2 * feat;
 		}
 		check += penetration;
 		resisted = (signed) check < (signed) val;
@@ -1098,7 +1101,7 @@ static int CheckSaves(Actor* actor, Effect* fx)
 			fx->Parameter1 /= 2;
 		}
 		// improved evasion: take only half damage even though we failed the save
-		if (globals.iwd2fx && fx->IsSaveForHalfDamage && actor->HasFeat(FEAT_IMPROVED_EVASION)) {
+		if (globals.iwd2fx && fx->IsSaveForHalfDamage && actor->HasFeat(Feat::ImprovedEvasion)) {
 			fx->Parameter1 /= 2;
 		}
 	}
@@ -2214,17 +2217,19 @@ Effect *EffectQueue::GetNextEffect(queue_t::iterator &f)
 	return nullptr;
 }
 
-ieDword EffectQueue::CountEffects(ieDword opcode, ieDword param1, ieDword param2, const ResRef &resource) const
+ieDword EffectQueue::CountEffects(ieDword opcode, ieDword param1, ieDword param2, const ResRef& resource, const ResRef& source) const
 {
 	ieDword cnt = 0;
 
 	for (const auto& fx : effects) {
-		MATCH_OPCODE()
+		if (opcode != 0xffffffff)
+			MATCH_OPCODE()
 		if( param1!=0xffffffff)
 			MATCH_PARAM1()
 		if( param2!=0xffffffff)
 			MATCH_PARAM2()
 		if (!resource.IsEmpty() && fx.Resource != resource) continue;
+		if (!source.IsEmpty() && fx.SourceRef != source) continue;
 		cnt++;
 	}
 	return cnt;
@@ -2373,7 +2378,7 @@ bool EffectQueue::HasHostileEffects() const
 
 // returns true if the target matches iwd ids targeting
 // usually this is used to restrict an effect to specific targets
-bool EffectQueue::CheckIWDTargeting(Scriptable* Owner, Actor* target, ieDword value, ieDword type, Effect *fx)
+bool EffectQueue::CheckIWDTargeting(const Scriptable* Owner, Actor* target, ieDword value, ieDword type, Effect* fx)
 {
 	const IWDIDSEntry& entry = gamedata->GetSpellProt(type);
 	ieDword idx = entry.stat;

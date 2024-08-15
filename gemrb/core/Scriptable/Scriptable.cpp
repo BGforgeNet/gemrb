@@ -37,6 +37,7 @@
 #include "GUI/GameControl.h"
 #include "GUI/TextSystem/Font.h"
 #include "RNG.h"
+#include "Scriptable/Door.h"
 #include "Scriptable/InfoPoint.h"
  
 #include <utility>
@@ -513,8 +514,12 @@ void Scriptable::ProcessActions()
 		if (WaitCounter) {
 			break;
 		}
-		//break execution in case of blocking action
+		// break execution in case of blocking action (AF_BLOCKING)
 		if (CurrentAction) {
+			break;
+		}
+		// break execution if a fade was started (it pauses script processing, so this can only be true once here)
+		if (core->timer.IsFading()) {
 			break;
 		}
 		//break execution in case of movement
@@ -818,6 +823,9 @@ void Scriptable::CreateProjectile(const ResRef& spellResRef, ieDword tgt, int le
 			// see the traps in the duergar/assassin battle in bg2 dungeon
 			// see also function below - maybe we should fix Pos instead
 			origin = ((InfoPoint *)this)->TrapLaunch;
+		} else if (Type == ST_DOOR) {
+			// iwd2 ar6050 doors need the same; the closed outline is moved to the map corner
+			origin = As<const Door>(this)->TrapLaunch;
 		}
 
 		if (caster) {
@@ -2083,84 +2091,86 @@ void Movable::DoStep(unsigned int walkScale, ieDword time) {
 		return;
 	}
 
-	if (time > timeStartStep) {
-		Point nmptStep = step->point;
-		float_t dx = nmptStep.x - Pos.x;
-		float_t dy = nmptStep.y - Pos.y;
-		Map::NormalizeDeltas(dx, dy, float_t(gamedata->GetStepTime()) / float_t(walkScale));
-		if (dx == 0 && dy == 0) {
-			// probably shouldn't happen, but it does when running bg2's cut28a set of cutscenes
+	if (time <= timeStartStep) {
+		return;
+	}
+
+	Point nmptStep = step->point;
+	float_t dx = nmptStep.x - Pos.x;
+	float_t dy = nmptStep.y - Pos.y;
+	Map::NormalizeDeltas(dx, dy, float_t(gamedata->GetStepTime()) / float_t(walkScale));
+	if (dx == 0 && dy == 0) {
+		// probably shouldn't happen, but it does when running bg2's cut28a set of cutscenes
+		ClearPath(true);
+		Log(DEBUG, "PathFinderWIP", "Abandoning because I'm exactly at the goal");
+		pathAbandoned = true;
+		return;
+	}
+
+	Actor* actorInTheWay = nullptr;
+	// We can't use GetActorInRadius because we want to only check directly along the way
+	// and not be blocked by actors who are on the sides
+	int collisionLookaheadRadius = ((circleSize < 3 ? 3 : circleSize) - 1) * 3;
+	int r = collisionLookaheadRadius;
+	for (; r > 0 && !actorInTheWay; r--) {
+		auto xCollision = Pos.x + dx * r;
+		auto yCollision = Pos.y + dy * r; // NormalizeDeltas already adjusted dy for perspective
+		Point nmptCollision(xCollision, yCollision);
+		actorInTheWay = area->GetActor(nmptCollision, GA_NO_DEAD | GA_NO_UNSCHEDULED | GA_NO_SELF, this);
+	}
+
+	const Actor* actor = Scriptable::As<Actor>(this);
+	bool blocksSearch = BlocksSearchMap();
+	if (actorInTheWay && blocksSearch && actorInTheWay->BlocksSearchMap()) {
+		// Give up instead of bumping if you are close to the goal
+		if (!(step->Next) && PersonalDistance(nmptStep, this) < MAX_OPERATING_DISTANCE) {
 			ClearPath(true);
-			Log(DEBUG, "PathFinderWIP", "Abandoning because I'm exactly at the goal");
+			NewOrientation = Orientation;
+			// Do not call ReleaseCurrentAction() since other actions
+			// than MoveToPoint can cause movement
+			Log(DEBUG, "PathFinderWIP", "Abandoning because I'm close to the goal");
 			pathAbandoned = true;
 			return;
 		}
-
-		Actor *actorInTheWay = nullptr;
-		// We can't use GetActorInRadius because we want to only check directly along the way
-		// and not be blocked by actors who are on the sides
-		int collisionLookaheadRadius = ((circleSize < 3 ? 3 : circleSize) - 1) * 3;
-		int r = collisionLookaheadRadius;
-		for (; r > 0 && !actorInTheWay; r--) {
-			auto xCollision = Pos.x + dx * r;
-			auto yCollision = Pos.y + dy * r * 0.75; // FIXME: should this really be skewed?
-			Point nmptCollision(xCollision, yCollision);
-			actorInTheWay = area->GetActor(nmptCollision, GA_NO_DEAD|GA_NO_UNSCHEDULED|GA_NO_SELF, this);
-		}
-
-		const Actor* actor = Scriptable::As<Actor>(this);
-		bool blocksSearch = BlocksSearchMap();
-		if (actorInTheWay && blocksSearch && actorInTheWay->BlocksSearchMap()) {
-			// Give up instead of bumping if you are close to the goal
-			if (!(step->Next) && PersonalDistance(nmptStep, this) < MAX_OPERATING_DISTANCE) {
-				ClearPath(true);
-				NewOrientation = Orientation;
-				// Do not call ReleaseCurrentAction() since other actions
-				// than MoveToPoint can cause movement
-				Log(DEBUG, "PathFinderWIP", "Abandoning because I'm close to the goal");
-				pathAbandoned = true;
-				return;
-			}
-			if (actor && actor->ValidTarget(GA_CAN_BUMP) && actorInTheWay->ValidTarget(GA_ONLY_BUMPABLE)) {
-				actorInTheWay->BumpAway();
-			} else if (r == 1 || actorInTheWay->GetPath()) {
-				// only back off if the immediate step is blocked or if the blocker is moving
-				// it's better to make a single step if possible, to avoid backoff loops
-				Backoff();
-				return;
-			}
-		}
-		// Stop if there's a door in the way
-		if (blocksSearch && bool(area->GetBlocked(Pos + Point(dx, dy)) & PathMapFlags::SIDEWALL)) {
-			ClearPath(true);
-			NewOrientation = Orientation;
+		if (actor && actor->ValidTarget(GA_CAN_BUMP) && actorInTheWay->ValidTarget(GA_ONLY_BUMPABLE)) {
+			actorInTheWay->BumpAway();
+		} else if (r == 1 || actorInTheWay->GetPath()) {
+			// only back off if the immediate step is blocked or if the blocker is moving
+			// it's better to make a single step if possible, to avoid backoff loops
+			Backoff();
 			return;
 		}
-		if (blocksSearch) {
-			area->ClearSearchMapFor(this);
-		}
-		StanceID = IE_ANI_WALK;
-		if (InternalFlags & IF_RUNNING) {
-			StanceID = IE_ANI_RUN;
-		}
-		Pos.x += dx;
-		Pos.y += dy;
-		oldPos = Pos;
-		if (actor && blocksSearch) {
-			auto flag = actor->IsPartyMember() ? PathMapFlags::PC : PathMapFlags::NPC;
-			area->tileProps.PaintSearchMap(Map::ConvertCoordToTile(Pos), circleSize, flag);
-		}
+	}
+	// Stop if there's a door in the way
+	if (blocksSearch && bool(area->GetBlocked(Pos + Point(dx, dy)) & PathMapFlags::SIDEWALL)) {
+		ClearPath(true);
+		NewOrientation = Orientation;
+		return;
+	}
+	if (blocksSearch) {
+		area->ClearSearchMapFor(this);
+	}
+	StanceID = IE_ANI_WALK;
+	if (InternalFlags & IF_RUNNING) {
+		StanceID = IE_ANI_RUN;
+	}
+	Pos.x += dx;
+	Pos.y += dy;
+	oldPos = Pos;
+	if (actor && blocksSearch) {
+		auto flag = actor->IsPartyMember() ? PathMapFlags::PC : PathMapFlags::NPC;
+		area->tileProps.PaintSearchMap(Map::ConvertCoordToTile(Pos), circleSize, flag);
+	}
 
-		SetOrientation(step->orient, false);
-		timeStartStep = time;
-		if (Pos == nmptStep) {
-			if (step->Next) {
-				step = step->Next;
-			} else {
-				ClearPath(true);
-				NewOrientation = Orientation;
-				pathfindingDistance = circleSize;
-			}
+	SetOrientation(step->orient, false);
+	timeStartStep = time;
+	if (Pos == nmptStep) {
+		if (step->Next) {
+			step = step->Next;
+		} else {
+			ClearPath(true);
+			NewOrientation = Orientation;
+			pathfindingDistance = circleSize;
 		}
 	}
 }

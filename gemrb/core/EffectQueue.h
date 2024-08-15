@@ -290,7 +290,7 @@ public:
 	const Effect *GetNextSavedEffect(queue_t::const_iterator &f) const;
 	const Effect *GetNextEffect(queue_t::const_iterator &f) const;
 	Effect *GetNextEffect(queue_t::iterator &f);
-	ieDword CountEffects(EffectRef &effect_reference, ieDword param1, ieDword param2, const ResRef& = ResRef()) const;
+	ieDword CountEffects(EffectRef& effect_reference, ieDword param1, ieDword param2, const ResRef& = ResRef(), const ResRef& = ResRef()) const;
 	void ModifyEffectPoint(EffectRef &effect_reference, ieDword x, ieDword y);
 	void ModifyAllEffectSources(const Point &source);
 	/* returns the number of saved effects */
@@ -339,10 +339,10 @@ public:
 	/** just checks if it is a particularly stupid effect that needs its target reset */
 	static bool OverrideTarget(const Effect *fx);
 	bool HasHostileEffects() const;
-	static bool CheckIWDTargeting(Scriptable* Owner, Actor* target, ieDword value, ieDword type, Effect *fx = nullptr);
+	static bool CheckIWDTargeting(const Scriptable* Owner, Actor* target, ieDword value, ieDword type, Effect* fx = nullptr);
 private:
 	/** counts effects of specific opcode, parameters and resource */
-	ieDword CountEffects(ieDword opcode, ieDword param1, ieDword param2, const ResRef& = ResRef()) const;
+	ieDword CountEffects(ieDword opcode, ieDword param1, ieDword param2, const ResRef& = ResRef(), const ResRef& = ResRef()) const;
 	void ModifyEffectPoint(ieDword opcode, ieDword x, ieDword y);
 	//use the effect reference style calls from outside
 	static Effect *CreateEffect(ieDword opcode, ieDword param1, ieDword param2, ieWord timing);

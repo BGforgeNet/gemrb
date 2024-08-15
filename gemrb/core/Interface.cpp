@@ -207,7 +207,7 @@ ItemDragOp::ItemDragOp(CREItem* item)
 		pic = gamedata->GetBAMSprite(i->ItemIcon, -1, 0);
 	}
 
-	cursor = pic;
+	cursor = std::move(pic);
 
 	// FIXME: this VarName is not consistent
 	dragDummy.BindDictVariable("itembutton", Control::INVALID_VALUE);
@@ -247,7 +247,9 @@ Interface::Interface(CoreSettings&& cfg)
 	if (!config.KeepCache) DelTree(config.CachePath, false);
 	
 	vars = std::move(config.vars);
-	vars.Set("MaxPartySize", config.MaxPartySize); // for simple GUIScript access
+	// for simple GUIScript access
+	vars.Set("MaxPartySize", config.MaxPartySize);
+	vars.Set("GUIEnhancements", config.GUIEnhancements);
 
 	LoadPlugins();
 	InitVideo();
@@ -375,7 +377,7 @@ Interface::Interface(CoreSettings&& cfg)
 	}
 	if (FileExists(ini_path)) {
 		tmp = INIConfig;
-		INIConfig = gemrbINI;
+		INIConfig = std::move(gemrbINI);
 	} else {
 		ini_path = PathJoin(config.GamePath, INIConfig);
 		Log(MESSAGE,"Core", "Loading original game options from {}", ini_path);
@@ -493,7 +495,7 @@ Interface::Interface(CoreSettings&& cfg)
 	}
 
 	Log(MESSAGE, "Core", "Initializing Window Manager...");
-	winmgr = new WindowManager(VideoDriver, guifact);
+	winmgr = new WindowManager(VideoDriver, std::move(guifact));
 	RegisterScriptableWindow(winmgr->GetGameWindow(), "GAMEWIN", 0);
 	winmgr->SetCursorFeedback(WindowManager::CursorFeedback(config.MouseFeedback));
 
@@ -838,6 +840,7 @@ bool Interface::ReadGameTimeTable()
 	Time.day_sec = Time.hour_sec * 24; // move to table if pst turns out to be different
 	Time.day_size = Time.day_sec * Time.defaultTicksPerSec;
 	Time.fade_reset = table->QueryFieldUnsigned<unsigned int>("FADE_RESET", "DURATION");
+	Time.fade_default = table->QueryFieldUnsigned<unsigned int>("FADE_DEFAULT", "DURATION");
 
 	return true;
 }
@@ -1155,7 +1158,7 @@ void Interface::LoadSprites()
 				if (GroundCircleScale[size]) {
 					sprite = VideoDriver->SpriteScaleDown(sprite, GroundCircleScale[size]);
 				}
-				GroundCircles[size][i] = sprite;
+				GroundCircles[size][i] = std::move(sprite);
 			}
 		}
 	}
@@ -1191,7 +1194,7 @@ void Interface::LoadFonts()
 		if (!fnt) {
 			error("Core", "Unable to load font resource: {} for ResRef {} (check fonts.2da)", font_name, resref);
 		} else {
-			fonts[resref] = fnt;
+			fonts[resref] = std::move(fnt);
 
 			Log(MESSAGE, "Core", "Loaded Font: {} for ResRef {}", font_name, resref);
 		}
@@ -1660,22 +1663,20 @@ Actor *Interface::SummonCreature(const ResRef& resource, const ResRef& animRes, 
 			Owner->AddTrigger(TriggerEntry(trigger_summoned, ab->GetGlobalID()));
 		}
 
-		if (!animRes.IsEmpty()) {
-			ScriptedAnimation* vvc = gamedata->GetScriptedAnimation(animRes, false);
-			if (vvc) {
-				//This is the final position of the summoned creature
-				//not the original target point
-				vvc->Pos = ab->Pos;
-				//force vvc to play only once
-				vvc->PlayOnce();
-				map->AddVVCell(vvc);
+		ScriptedAnimation* vvc = gamedata->GetScriptedAnimation(animRes, false);
+		if (vvc) {
+			// This is the final position of the summoned creature
+			// not the original target point
+			vvc->Pos = ab->Pos;
+			// force vvc to play only once
+			vvc->PlayOnce();
+			map->AddVVCell(vvc);
 
-				//set up the summon disable effect
-				Effect *newfx = EffectQueue::CreateEffect(fx_summon_disable_ref, 0, 1, FX_DURATION_ABSOLUTE);
-				if (newfx) {
-					newfx->Duration = vvc->GetSequenceDuration(Time.defaultTicksPerSec) * 9 / 10 + core->GetGame()->GameTime;
-					ApplyEffect(newfx, ab, ab);
-				}
+			// set up the summon disable effect
+			Effect* newfx = EffectQueue::CreateEffect(fx_summon_disable_ref, 0, 1, FX_DURATION_ABSOLUTE);
+			if (newfx) {
+				newfx->Duration = vvc->GetSequenceDuration(Time.defaultTicksPerSec) * 9 / 10 + core->GetGame()->GameTime;
+				ApplyEffect(newfx, ab, ab);
 			}
 		}
 
@@ -1923,7 +1924,7 @@ int Interface::LoadSymbol(const ResRef& ref)
 		return -1;
 	}
 
-	Symbol s = { sm, ref };
+	Symbol s = { std::move(sm), ref };
 	ind = -1;
 	for (size_t i = 0; i < symbols.size(); i++) {
 		if (!symbols[i].sm) {
@@ -2063,9 +2064,9 @@ int Interface::PlayMovie(const ResRef& movieRef)
 		int b = sttable->QueryFieldSigned<int>("blue", "frame");
 
 		if (r || g || b) {
-			mp->SetSubtitles(new IESubtitles(font, sttable, Color(r, g, b, 0xff)));
+			mp->SetSubtitles(new IESubtitles(std::move(font), sttable, Color(r, g, b, 0xff)));
 		} else {
-			mp->SetSubtitles(new IESubtitles(font, sttable));
+			mp->SetSubtitles(new IESubtitles(std::move(font), sttable));
 		}
 	}
 
@@ -2075,7 +2076,10 @@ int Interface::PlayMovie(const ResRef& movieRef)
 	}
 
 	// clear whatever is currently on screen
+	const GameControl* gc = GetGameControl();
+	bool inCutScene = gc && gc->GetScreenFlags().Test(ScreenFlags::Cutscene);
 	SetCutSceneMode(true);
+
 	Region screen(0, 0, config.Width, config.Height);
 	Window* win = winmgr->MakeWindow(screen);
 	win->SetFlags(Window::Borderless|Window::NoSounds, BitOp::OR);
@@ -2086,7 +2090,10 @@ int Interface::PlayMovie(const ResRef& movieRef)
 	mp->Play(win);
 	win->Close();
 	winmgr->SetCursorFeedback(cur);
-	SetCutSceneMode(false);
+	// only reset if it wasn't active before we started or if there's no game yet
+	if (!inCutScene) {
+		SetCutSceneMode(false);
+	}
 	if (sound_override) {
 		sound_override->Stop();
 		sound_override.reset();
@@ -2151,7 +2158,7 @@ DirectoryIterator Interface::GetResourceDirectory(RESOURCE_DIRECTORY dir) const
 	}
 
 	DirectoryIterator dirIt(PathJoin(config.GamePath, resourcePath));
-	dirIt.SetFilterPredicate(filter);
+	dirIt.SetFilterPredicate(std::move(filter));
 	return dirIt;
 }
 
@@ -2178,9 +2185,9 @@ bool Interface::InitializeVarsWithINI(const path_t& iniFileName)
 
 	if (!gemINIStream || !gemINI->Open(std::unique_ptr<DataStream>{gemINIStream})) {
 		Log(WARNING, "Core", "Unable to load GemRB default values.");
-		defaults = ini;
+		defaults = std::move(ini);
 	} else {
-		defaults = gemINI;
+		defaults = std::move(gemINI);
 	}
 	if (!overrides) {
 		overrides = defaults;
@@ -2970,7 +2977,7 @@ void Interface::DelTree(const path_t& path, bool onlysave) const
 		const path_t& name = dir.GetName();
 		if (!onlysave || SavedExtension(name) ) {
 			path_t dtmp = dir.GetFullPath();
-			unlink(dtmp.c_str());
+			UnlinkFile(dtmp);
 		}
 	} while (++dir);
 }
@@ -3567,7 +3574,7 @@ int Interface::SwapoutArea(Map *map) const
 {
 	auto RemoveFromCache = [&](const ResRef& resref, SClass_ID classID) {
 		path_t filename = PathJoinExt(config.CachePath, resref, TypeExt(classID));
-		unlink(filename.c_str());
+		UnlinkFile(filename);
 	};
 
 	//refuse to save ambush areas, for example

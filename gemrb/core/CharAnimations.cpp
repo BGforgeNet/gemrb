@@ -306,7 +306,7 @@ unsigned char CharAnimations::MaybeOverrideStance(unsigned char stance) const
 void CharAnimations::MaybeUpdateMainPalette(const Animation& anim) {
 	if (previousStanceID != stanceID && GetAnimType() != IE_ANI_TWO_PIECE) {
 		// Test if the palette in question is actually different to the one loaded.
-		if (*PartPalettes[PAL_MAIN] != *anim.GetFrame(0)->GetPalette()) {
+		if (!PartPalettes[PAL_MAIN] || *PartPalettes[PAL_MAIN] != *anim.GetFrame(0)->GetPalette()) {
 			PaletteResRef[PAL_MAIN].Reset();
 
 			PartPalettes[PAL_MAIN] = MakeHolder<Palette>(*anim.GetFrame(0)->GetPalette());
@@ -398,6 +398,7 @@ void CharAnimations::SetRangedType(int rt)
 
 void CharAnimations::SetWeaponType(unsigned char wt)
 {
+	if (wt == IE_ANI_WEAPON_INVALID) return;
 	if (wt != WeaponType) {
 		WeaponType = wt;
 		DropAnims();
@@ -565,7 +566,7 @@ void CharAnimations::SetupColors(PaletteType type)
 			}
 			Holder<Palette> tmppal = gamedata->GetPalette(PaletteResRef[type]);
 			if (tmppal) {
-				PartPalettes[type] = tmppal;
+				PartPalettes[type] = std::move(tmppal);
 			} else {
 				PaletteResRef[type].Reset();
 			}
@@ -3014,9 +3015,9 @@ Holder<Sprite2D> GetPaperdollImage(const ResRef& resref, const ieDword* colors, 
 	for (AnimationFactory::index_t i = 0; i < af->GetCycleSize(0); ++i) {
 		auto spr = af->GetFrame(i, 0);
 		if (first == nullptr) {
-			first = spr;
+			first = std::move(spr);
 		} else if (second == nullptr && spr != first) {
-			second = spr;
+			second = std::move(spr);
 			break;
 		}
 	}

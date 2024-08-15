@@ -31,7 +31,7 @@
 #include "System/VFS.h"
 
 // This is changed by both cmake and AppVeyor (CmakeLists.txt and .appveyor.yml)
-#define VERSION_GEMRB "0.9.2-git"
+#define VERSION_GEMRB "0.9.3-git"
 
 #define GEMRB_STRING "GemRB v" VERSION_GEMRB
 #define PACKAGE "GemRB"
@@ -100,7 +100,7 @@ struct CoreSettings {
 	int LogColor = -1; // -1 is to automatically determine
 	bool CheatFlag = false; /** Cheats enabled? */
 	int MaxPartySize = 6;
-	int GUIEnhancements = 0;
+	int GUIEnhancements = 23;
 
 	bool KeepCache = false;
 	bool MultipleQuickSaves = false;
