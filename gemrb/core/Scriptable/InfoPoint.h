@@ -43,6 +43,8 @@ public:
 	bool PossibleToSeeTrap() const override;
 	bool IsPortal() const;
 	int GetCursor(TargetMode targetMode) const;
+	void TryBashLock(Actor*) override { return; };
+	void TryPickLock(Actor*) override { return; };
 
 public:
 	ResRef Destination;

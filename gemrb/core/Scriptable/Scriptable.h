@@ -24,6 +24,7 @@
 #include "exports.h"
 #include "ie_cursors.h"
 #include "ie_types.h"
+#include "strrefs.h"
 
 #include "CharAnimations.h"
 #include "OverHeadText.h"
@@ -455,6 +456,10 @@ public:
 	virtual int TrapResets() const = 0;
 	virtual bool CanDetectTrap() const { return true; }
 	virtual bool PossibleToSeeTrap() const;
+	virtual void TryBashLock(Actor* actor) = 0;
+	virtual void TryPickLock(Actor* actor) = 0;
+	virtual bool IsLocked() const { return false; }
+
 public:
 	std::shared_ptr<Gem_Polygon> outline = nullptr;
 	Color outlineColor = ColorBlack;
@@ -483,6 +488,8 @@ public:
 	//returns true if trap has been triggered, tumble skill???
 	virtual bool TriggerTrap(int skill, ieDword ID);
 	bool TryUnlock(Actor *actor, bool removekey) const;
+	bool TryBashLock(Actor* actor, ieWord lockDifficulty, HCStrings failStr);
+	bool TryPickLock(Actor* actor, ieWord lockDifficulty, ieStrRef customFailStr, HCStrings failStr);
 };
 
 class GEM_EXPORT Movable : public Selectable {

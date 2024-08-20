@@ -1983,7 +1983,7 @@ void GameScript::DestroySelf(Scriptable* Sender, Action* /*parameters*/)
 	}
 }
 
-void GameScript::ScreenShake(Scriptable* Sender, Action* parameters)
+void GameScript::ScreenShake(Scriptable* /*Sender*/, Action* parameters)
 {
 	if (parameters->int1Parameter) { //IWD2 has a different profile
 		Point p(parameters->int1Parameter, parameters->int2Parameter);
@@ -1991,8 +1991,6 @@ void GameScript::ScreenShake(Scriptable* Sender, Action* parameters)
 	} else {
 		core->timer.SetScreenShake(parameters->pointParameter, parameters->int0Parameter);
 	}
-	Sender->SetWait( parameters->int0Parameter );
-	Sender->ReleaseCurrentAction(); // todo, blocking?
 }
 
 void GameScript::UnhideGUI(Scriptable* /*Sender*/, Action* /*parameters*/)
@@ -2317,20 +2315,6 @@ void GameScript::Interact(Scriptable* Sender, Action* parameters)
 	BeginDialog( Sender, parameters, BD_INTERACT | BD_NOEMPTY );
 }
 
-static unsigned int FindNearPoint(Scriptable* Sender, Point *&p1, Point *&p2)
-{
-	unsigned int distance1 = Distance(*p1, Sender);
-	unsigned int distance2 = Distance(*p2, Sender);
-	if (distance1 <= distance2) {
-		return distance1;
-	} else {
-		Point *tmp = p1;
-		p1 = p2;
-		p2 = tmp;
-		return distance2;
-	}
-}
-
 //this is an immediate action without checking Sender
 void GameScript::DetectSecretDoor(Scriptable* Sender, Action* parameters)
 {
@@ -2449,7 +2433,7 @@ void GameScript::RemoveTraps(Scriptable* Sender, Action* parameters)
 	}
 
 	unsigned int distance;
-	Point *p, *otherp;
+	const Point* p;
 	Door *door = NULL;
 	Container *container = NULL;
 	InfoPoint *trigger = NULL;
@@ -2464,15 +2448,13 @@ void GameScript::RemoveTraps(Scriptable* Sender, Action* parameters)
 			Sender->ReleaseCurrentAction();
 			return;
 		}
-		p = door->toOpen;
-		otherp = door->toOpen+1;
-		distance = FindNearPoint( Sender, p, otherp);
+
+		p = door->GetClosestApproach(Sender, distance);
 		flags = door->Trapped && door->TrapDetected;
 		break;
 	case ST_CONTAINER:
 		container = static_cast<Container*>(tar);
 		p = &container->Pos;
-		otherp = p;
 		distance = Distance(*p, Sender);
 		flags = container->Trapped && container->TrapDetected;
 		break;
@@ -2481,7 +2463,6 @@ void GameScript::RemoveTraps(Scriptable* Sender, Action* parameters)
 		// this point is incorrect! will cause actor to enter trap
 		// need to find a point using trigger->outline
 		p = &trigger->Pos;
-		otherp = p;
 		distance = Distance(tar, Sender);
 		flags = trigger->Trapped && trigger->TrapDetected && trigger->CanDetectTrap();
 		actor->SetDisarmingTrap(trigger->GetGlobalID());
@@ -2490,7 +2471,7 @@ void GameScript::RemoveTraps(Scriptable* Sender, Action* parameters)
 		Sender->ReleaseCurrentAction();
 		return;
 	}
-	actor->SetOrientation(actor->Pos, *otherp, false);
+	actor->SetOrientation(actor->Pos, *p, false);
 	if (distance <= MAX_OPERATING_DISTANCE) {
 		if (flags) {
 			switch(type) {
@@ -2533,11 +2514,10 @@ void GameScript::PickLock(Scriptable* Sender, Action* parameters)
 		return;
 	}
 	unsigned int distance;
-	Point *p, *otherp;
+	const Point* p;
 	Door *door = NULL;
 	Container *container = NULL;
 	ScriptableType type = tar->Type;
-	ieDword flags;
 
 	switch (type) {
 	case ST_DOOR:
@@ -2547,31 +2527,24 @@ void GameScript::PickLock(Scriptable* Sender, Action* parameters)
 			Sender->ReleaseCurrentAction();
 			return;
 		}
-		p = door->toOpen;
-		otherp = door->toOpen+1;
-		distance = FindNearPoint( Sender, p, otherp);
-		flags = door->Flags&DOOR_LOCKED;
+		p = door->GetClosestApproach(Sender, distance);
 		break;
 	case ST_CONTAINER:
 		container = static_cast<Container*>(tar);
 		p = &container->Pos;
-		otherp = p;
 		distance = Distance(*p, Sender);
-		flags = container->Flags&CONT_LOCKED;
 		break;
 	default:
 		Sender->ReleaseCurrentAction();
 		return;
 	}
 
-	actor->SetOrientation(actor->Pos, *otherp, false);
+	Highlightable* lockMount = static_cast<Highlightable*>(tar);
+	bool locked = lockMount->IsLocked();
+	actor->SetOrientation(actor->Pos, *p, false);
 	if (distance <= MAX_OPERATING_DISTANCE) {
-		if (flags) {
-			if (type==ST_DOOR) {
-				door->TryPickLock(actor);
-			} else {
-				container->TryPickLock(actor);
-			}
+		if (locked) {
+			lockMount->TryPickLock(actor);
 		} else {
 			//notlocked
 			//displaymsg->DisplayString(HCStrings::NotLocked);
@@ -2637,17 +2610,19 @@ void GameScript::ToggleDoor(Scriptable* Sender, Action* parameters)
 		return;
 	}
 	unsigned int distance;
-	Point *p = door->toOpen;
-	Point *otherp = door->toOpen+1;
-	distance = FindNearPoint( Sender, p, otherp);
+	const Point* p = door->GetClosestApproach(Sender, distance);
 	if (distance <= MAX_OPERATING_DISTANCE) {
-		actor->SetOrientation(actor->Pos, *otherp, false);
+		actor->SetOrientation(actor->Pos, *p, false);
 		if (!door->TryUnlock(actor)) {
-			displaymsg->DisplayMsgAtLocation(HCStrings::DoorLocked, FT_MISC, door, actor);
+			if (door->Flags & DOOR_LOCKEDINFOTEXT && door->LockedStrRef != ieStrRef::INVALID) {
+				displaymsg->DisplayString(door->LockedStrRef, GUIColors::LIGHTGREY, STRING_FLAGS::SOUND | STRING_FLAGS::SPEECH);
+			} else {
+				displaymsg->DisplayMsgAtLocation(HCStrings::DoorLocked, FT_MISC, door, actor);
+			}
 			door->AddTrigger(TriggerEntry(trigger_failedtoopen, actor->GetGlobalID()));
 
 			//playsound unsuccessful opening of door
-			core->PlaySound(door->IsOpen() ? DS_CLOSE_FAIL : DS_OPEN_FAIL, SFXChannel::Actions, *otherp, GEM_SND_SPATIAL);
+			core->PlaySound(door->IsOpen() ? DS_CLOSE_FAIL : DS_OPEN_FAIL, SFXChannel::Actions, *p, GEM_SND_SPATIAL);
 			Sender->ReleaseCurrentAction();
 			return; //don't open door
 		}
@@ -3764,7 +3739,7 @@ void GameScript::SetVisualRange(Scriptable* Sender, Action* parameters)
 	int range = parameters->int0Parameter;
 	// 0 means reset back to normal
 	if (range == 0) {
-		range = VOODOO_VISUAL_RANGE / 2;
+		range = VOODOO_VISUAL_RANGE;
 	}
 
 	actor->SetBase(IE_VISUALRANGE, range);
@@ -6582,26 +6557,21 @@ void GameScript::BashDoor(Scriptable* Sender, Action* parameters)
 		return;
 	}
 
-	Door *door = nullptr;
-	Container *container = nullptr;
-	Point pos;
+	const Point* pos;
+	unsigned int distance;
 	if (target->Type == ST_DOOR) {
-		door = static_cast<Door*>(target);
-		pos = door->toOpen[0];
-		const Point& otherp = door->toOpen[1];
-		if (Distance(pos, Sender) > Distance(otherp, Sender)) {
-			pos = otherp;
-		}
+		Door* door = static_cast<Door*>(target);
+		pos = door->GetClosestApproach(Sender, distance);
 	} else if(target->Type == ST_CONTAINER) {
-		container = static_cast<Container*>(target);
-		pos = target->Pos;
+		pos = &target->Pos;
+		distance = PersonalDistance(*pos, Sender);
 	} else {
 		Sender->ReleaseCurrentAction();
 		return;
 	}
 
-	if (SquaredPersonalDistance(pos, Sender) > MAX_OPERATING_DISTANCE * MAX_OPERATING_DISTANCE) {
-		MoveNearerTo(Sender, pos, MAX_OPERATING_DISTANCE, 0);
+	if (distance > MAX_OPERATING_DISTANCE) {
+		MoveNearerTo(Sender, *pos, MAX_OPERATING_DISTANCE, 0);
 		return;
 	}
 
@@ -6610,11 +6580,7 @@ void GameScript::BashDoor(Scriptable* Sender, Action* parameters)
 	gc->SetTargetMode(TargetMode::Attack); // for bashing doors too
 
 	// try to bash it
-	if (door) {
-		door->TryBashLock(actor);
-	} else if (container) {
-		container->TryBashLock(actor);
-	}
+	static_cast<Highlightable*>(target)->TryBashLock(actor);
 
 	Sender->ReleaseCurrentAction();
 }

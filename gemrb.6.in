@@ -40,6 +40,11 @@ settings in the engine configuration file below. A full install is recommended.
 Disable audio completely, regardless of supported audio plugins.
 
 .TP
+.BI \-f
+Start in full screen. Try this if the game window suffers from bad aspect ratio. Otherwise
+just switch to your preference in the game's video options.
+
+.TP
 .BI \-c " FILE"
 Use the specified configuration file
 .IR FILE " instead"
@@ -484,6 +489,11 @@ Pointer movement speed with gamepads. The default is 10.
 If set to
 .IR 1 ,
 original aspect ratio is preserved while game area is scaled to native PS Vita resolution. It is enabled by default.
+
+.TP
+.BR UseAsLibrary =INT
+If set to non-zero, disables some engine features to facilitate independent
+use of GemRB libraries. The default is 0.
 
 .\"###################################################
 .SH FILES

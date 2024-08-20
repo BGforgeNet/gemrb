@@ -370,78 +370,18 @@ void Highlightable::TryDisarm(Actor* actor)
 
 void Door::TryPickLock(Actor* actor)
 {
-	if (LockDifficulty == 100) {
-		if (OpenStrRef != ieStrRef::INVALID) {
-			displaymsg->DisplayStringName(OpenStrRef, GUIColors::XPCHANGE, actor, STRING_FLAGS::SOUND | STRING_FLAGS::SPEECH);
-		} else {
-			displaymsg->DisplayMsgAtLocation(HCStrings::DoorNotPickable, FT_ANY, actor, actor, GUIColors::XPCHANGE);
-		}
-		return;
-	}
-	int stat = actor->GetStat(IE_LOCKPICKING);
-	if (core->HasFeature(GFFlags::RULES_3ED)) {
-		int skill = actor->GetSkill(IE_LOCKPICKING);
-		if (skill == 0) { // a trained skill, make sure we fail
-			stat = 0;
-		} else {
-			stat *= 7; // convert to percent (magic 7 is from RE)
-			int dexmod = actor->GetAbilityBonus(IE_DEX);
-			stat += dexmod; // the original didn't use it, so let's not multiply it
-			displaymsg->DisplayRollStringName(ieStrRef::ROLL11, GUIColors::LIGHTGREY, actor, stat-dexmod, LockDifficulty, dexmod);
-		}
-	}
-	if (stat < (signed)LockDifficulty) {
-		displaymsg->DisplayMsgAtLocation(HCStrings::LockpickFailed, FT_ANY, actor, actor, GUIColors::XPCHANGE);
-		AddTrigger(TriggerEntry(trigger_picklockfailed, actor->GetGlobalID()));
-		core->PlaySound(DS_PICKFAIL, SFXChannel::Hits);
-		return;
-	}
-	SetDoorLocked( false, true);
-	core->GetGameControl()->ResetTargetMode();
-	displaymsg->DisplayMsgAtLocation(HCStrings::LockpickDone, FT_ANY, actor, actor);
-	AddTrigger(TriggerEntry(trigger_unlocked, actor->GetGlobalID()));
-	core->PlaySound(DS_PICKLOCK, SFXChannel::Hits);
-	ImmediateEvent();
-	int xp = gamedata->GetXPBonus(XP_LOCKPICK, actor->GetXPLevel(1));
-	const Game *game = core->GetGame();
-	game->ShareXP(xp, SX_DIVIDE);
+	if (!Highlightable::TryPickLock(actor, LockDifficulty, LockedStrRef, HCStrings::DoorNotPickable)) return;
+
+	SetDoorLocked(false, true);
 }
 
 void Door::TryBashLock(Actor *actor)
 {
-	//Get the strength bonus against lock difficulty
-	int bonus;
-	unsigned int roll;
-
-	if (core->HasFeature(GFFlags::RULES_3ED)) {
-		bonus = actor->GetAbilityBonus(IE_STR);
-		roll = actor->LuckyRoll(1, 100, bonus, 0);
-	} else {
-		int str = actor->GetStat(IE_STR);
-		int strEx = actor->GetStat(IE_STREXTRA);
-		bonus = core->GetStrengthBonus(2, str, strEx); //BEND_BARS_LIFT_GATES
-		roll = actor->LuckyRoll(1, 10, bonus, 0);
-	}
-
-	actor->FaceTarget(this);
-	if (core->HasFeature(GFFlags::RULES_3ED)) {
-		// ~Bash door check. Roll %d + %d Str mod > %d door DC.~
-		displaymsg->DisplayRollStringName(ieStrRef::ROLL1, GUIColors::LIGHTGREY, actor, roll, bonus, LockDifficulty);
-	}
-
-	if(roll < LockDifficulty || LockDifficulty == 100) {
-		displaymsg->DisplayMsgAtLocation(HCStrings::DoorBashFail, FT_ANY, actor, actor, GUIColors::XPCHANGE);
-		return;
-	}
+	if (!Highlightable::TryBashLock(actor, LockDifficulty, HCStrings::DoorBashFail)) return;
 
 	displaymsg->DisplayMsgAtLocation(HCStrings::DoorBashDone, FT_ANY, actor, actor, GUIColors::XPCHANGE);
 	SetDoorLocked(false, true);
-	core->GetGameControl()->ResetTargetMode();
-	Flags|=DOOR_BROKEN;
-
-	//This is ok, bashdoor also sends the unlocked trigger
-	AddTrigger(TriggerEntry(trigger_unlocked, actor->GetGlobalID()));
-	ImmediateEvent();
+	Flags |= DOOR_BROKEN;
 }
 
 // returns the appropriate cursor over a door
@@ -468,6 +408,19 @@ int Door::GetCursor(TargetMode targetMode, int lastCursor) const
 	}
 
 	return Cursor;
+}
+
+const Point* Door::GetClosestApproach(Scriptable* src, unsigned int& distance) const
+{
+	const Point* p = &toOpen[0];
+	unsigned int dist1 = Distance(toOpen[0], src);
+	unsigned int dist2 = Distance(toOpen[1], src);
+	distance = dist1;
+	if (dist1 > dist2) {
+		p = &toOpen[1];
+		distance = dist2;
+	}
+	return p;
 }
 
 std::string Door::dump() const

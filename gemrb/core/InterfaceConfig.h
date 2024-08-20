@@ -94,6 +94,7 @@ struct CoreSettings {
 	int Bpp = 32;
 	bool DrawFPS = false;
 	int CapFPS = 0;
+	bool FullScreen = false;
 	bool SpriteFoW = false;
 	uint32_t debugMode = 0;
 	bool Logging = true;
@@ -104,6 +105,7 @@ struct CoreSettings {
 
 	bool KeepCache = false;
 	bool MultipleQuickSaves = false;
+	bool UseAsLibrary = false;
 	// once GemRB own format is working well, this might be set to 0
 	int SaveAsOriginal = 1; // if true, saves files in compatible mode
 	std::string VideoDriverName = "sdl"; // consider deprecating? It's now a hidden option

@@ -518,7 +518,7 @@ void GameControl::OutlineDoors() const
 
 		door->Highlight = true;
 		if (targetMode != TargetMode::None) {
-			if (door->Visible() && (door->Flags & DOOR_LOCKED)) {
+			if (door->Visible() && door->IsLocked()) {
 				// only highlight targetable doors
 				door->outlineColor = displaymsg->GetColor(GUIColors::HOVERTARGETABLE);
 			}
@@ -546,7 +546,7 @@ void GameControl::OutlineContainers() const
 			container->Highlight = true;
 			if (targetMode == TargetMode::None) {
 				container->outlineColor = displaymsg->GetColor(GUIColors::HOVERCONTAINER);
-			} else if (container->Flags & CONT_LOCKED) {
+			} else if (container->IsLocked()) {
 				container->outlineColor = displaymsg->GetColor(GUIColors::HOVERTARGETABLE);
 			}
 		}
@@ -1937,11 +1937,8 @@ void GameControl::HandleDoor(Door *door, Actor *actor)
 	if (actor->GetStat(IE_SEX) == SEX_ILLUSION) return;
 	if ((targetMode == TargetMode::Cast) && spellCount) {
 		//we'll get the door back from the coordinates
-		const Point *p = door->toOpen;
-		const Point *otherp = door->toOpen+1;
-		if (Distance(*p,actor)>Distance(*otherp,actor)) {
-			p=otherp;
-		}
+		unsigned int dist;
+		const Point* p = door->GetClosestApproach(actor, dist);
 		TryToCast(actor, *p);
 		return;
 	}

@@ -265,7 +265,7 @@ void Scriptable::ExecuteScript(int scriptCount)
 	// area scripts still run for at least the current area, in bg1 (see ar2631, confirmed by testing)
 	// but not in bg2 (kill Abazigal in ar6005)
 	if (gc->GetScreenFlags().Test(ScreenFlags::Cutscene)) {
-		if (! (core->HasFeature(GFFlags::CUTSCENE_AREASCRIPTS) && Type == ST_AREA)) {
+		if (!(core->HasFeature(GFFlags::CUTSCENE_AREASCRIPTS) && (Type == ST_AREA || Type == ST_PROXIMITY))) {
 			return;
 		}
 	}
@@ -1836,6 +1836,83 @@ bool Highlightable::TryUnlock(Actor *actor, bool removekey) const {
 		delete item;
 	}
 
+	return true;
+}
+
+bool Highlightable::TryBashLock(Actor* actor, ieWord lockDifficulty, HCStrings failStr)
+{
+	// Get the strength bonus against lock difficulty
+	int bonus;
+	unsigned int roll;
+
+	if (core->HasFeature(GFFlags::RULES_3ED)) {
+		bonus = actor->GetAbilityBonus(IE_STR);
+		roll = actor->LuckyRoll(1, 100, bonus, 0);
+	} else {
+		int str = actor->GetStat(IE_STR);
+		int strEx = actor->GetStat(IE_STREXTRA);
+		bonus = core->GetStrengthBonus(2, str, strEx); // BEND_BARS_LIFT_GATES
+		roll = actor->LuckyRoll(1, 10, bonus, 0);
+	}
+
+	actor->FaceTarget(this);
+	if (core->HasFeature(GFFlags::RULES_3ED)) {
+		// ~Bash door check. Roll %d + %d Str mod > %d door DC.~
+		// there is no separate string for non-doors
+		displaymsg->DisplayRollStringName(ieStrRef::ROLL1, GUIColors::LIGHTGREY, actor, roll, bonus, lockDifficulty);
+	}
+
+	if (roll < lockDifficulty || lockDifficulty == 100) {
+		displaymsg->DisplayMsgAtLocation(failStr, FT_ANY, actor, actor, GUIColors::XPCHANGE);
+		return false;
+	}
+
+	// This is ok, bashdoor also sends the unlocked trigger
+	AddTrigger(TriggerEntry(trigger_unlocked, actor->GetGlobalID()));
+	ImmediateEvent();
+	core->GetGameControl()->ResetTargetMode();
+	return true;
+}
+
+bool Highlightable::TryPickLock(Actor* actor, ieWord lockDifficulty, ieStrRef customFailStr, HCStrings failStr)
+{
+	if (lockDifficulty == 100) {
+		if (customFailStr != ieStrRef::INVALID) {
+			displaymsg->DisplayStringName(customFailStr, GUIColors::XPCHANGE, actor, STRING_FLAGS::SOUND | STRING_FLAGS::SPEECH);
+		} else {
+			displaymsg->DisplayMsgAtLocation(failStr, FT_ANY, actor, actor, GUIColors::XPCHANGE);
+		}
+		return false;
+	}
+
+	int stat = actor->GetStat(IE_LOCKPICKING);
+	if (core->HasFeature(GFFlags::RULES_3ED)) {
+		int skill = actor->GetSkill(IE_LOCKPICKING);
+		if (skill == 0) { // a trained skill, make sure we fail
+			stat = 0;
+		} else {
+			stat *= 7; // convert to percent (magic 7 is from RE)
+			int dexmod = actor->GetAbilityBonus(IE_DEX);
+			stat += dexmod; // the original didn't use it, so let's not multiply it
+			displaymsg->DisplayRollStringName(ieStrRef::ROLL11, GUIColors::LIGHTGREY, actor, stat - dexmod, lockDifficulty, dexmod);
+		}
+	}
+	if (stat < (int) lockDifficulty) {
+		displaymsg->DisplayMsgAtLocation(HCStrings::LockpickFailed, FT_ANY, actor, actor, GUIColors::XPCHANGE);
+		AddTrigger(TriggerEntry(trigger_picklockfailed, actor->GetGlobalID()));
+		core->PlaySound(DS_PICKFAIL, SFXChannel::Hits);
+		return false;
+	}
+
+	core->GetGameControl()->ResetTargetMode();
+	displaymsg->DisplayMsgAtLocation(HCStrings::LockpickDone, FT_ANY, actor, actor);
+	core->PlaySound(DS_PICKLOCK, SFXChannel::Hits);
+	AddTrigger(TriggerEntry(trigger_unlocked, actor->GetGlobalID()));
+	ImmediateEvent();
+
+	int xp = gamedata->GetXPBonus(XP_LOCKPICK, actor->GetXPLevel(1));
+	const Game* game = core->GetGame();
+	game->ShareXP(xp, SX_DIVIDE);
 	return true;
 }
 
