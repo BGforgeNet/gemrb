@@ -3239,11 +3239,7 @@ bool Actor::GetSavingThrow(ieDword type, int modifier, const Effect *fx)
 		}
 		lastSave.prevType = type;
 		lastSave.prevRoll = ret;
-<<<<<<< HEAD
 		return saved;
-=======
-		return success;
->>>>>>> master
 	}
 
 	int roll = ret;
