@@ -799,20 +799,12 @@ void Map::UpdateScripts()
 	}
 
 	//Check if we need to start some door scripts
-	int doorCount = 0;
-	while (true) {
-		Door* door = TMap->GetDoor( doorCount++ );
-		if (!door)
-			break;
+	for (const auto& door : TMap->GetDoors()) {
 		door->Update();
 	}
 
 	//Check if we need to start some container scripts
-	size_t containerCount = 0;
-	while (true) {
-		Container* container = TMap->GetContainer( containerCount++ );
-		if (!container)
-			break;
+	for (const auto& container : TMap->GetContainers()) {
 		container->Update();
 	}
 
@@ -971,10 +963,8 @@ bool Map::FogTileUncovered(const Point &p, const Bitmap* mask) const
 void Map::DrawHighlightables(const Region& viewport) const
 {
 	// NOTE: piles are drawn in the main queue
-	size_t count = TMap->GetContainerCount();
-	for (size_t idx = 0; idx < count; idx++) {
-		Container* c = TMap->GetContainer(idx);
-		if (!c || c->containerType == IE_CONTAINER_PILE) continue;
+	for (const auto& c : TMap->GetContainers()) {
+		if (c->containerType == IE_CONTAINER_PILE) continue;
 
 		// don't highlight containers behind closed doors
 		// how's ar9103 chest has a Pos outside itself, so we check the bounding box instead
@@ -989,11 +979,7 @@ void Map::DrawHighlightables(const Region& viewport) const
 		}
 	}
 
-	count = TMap->GetDoorCount();
-	for (size_t idx = 0; idx < count; idx++) {
-		Door* d = TMap->GetDoor(idx);
-		if (!d) continue;
-
+	for (const auto& d : TMap->GetDoors()) {
 		if (d->Highlight) {
 			d->DrawOutline(viewport.origin);
 		} else if (debugFlags & DEBUG_SHOW_DOORS && !(d->Flags & DOOR_SECRET)) {
@@ -1005,11 +991,7 @@ void Map::DrawHighlightables(const Region& viewport) const
 		}
 	}
 
-	count = TMap->GetInfoPointCount();
-	for (size_t idx = 0; idx < count; idx++) {
-		InfoPoint* p = TMap->GetInfoPoint(idx);
-		if (!p) continue;
-
+	for (const auto& p : TMap->GetInfoPoints()) {
 		if (p->Highlight) {
 			p->DrawOutline(viewport.origin);
 		} else if (debugFlags & DEBUG_SHOW_INFOPOINTS) {
@@ -1380,74 +1362,68 @@ void Map::DrawMap(const Region& viewport, FogRenderer& fogRenderer, uint32_t dFl
 	};
 	fogRenderer.DrawFog(mapData);
 
-	size_t ipCount = 0;
-	while (true) {
-		//For each InfoPoint in the map
-		InfoPoint* ip = TMap->GetInfoPoint(ipCount++);
-		if (!ip) break;
-		ip->overHead.Draw();
-	}
-
-	size_t cnCount = 0;
-	while (true) {
-		//For each Container in the map
-		Container* cn = TMap->GetContainer(cnCount++);
-		if (!cn) break;
-		cn->overHead.Draw();
-	}
-
-	size_t drCount = 0;
-	while (true) {
-		//For each Door in the map
-		Door* dr = TMap->GetDoor(drCount++);
-		if (!dr) break;
-		dr->overHead.Draw();
-	}
-
-	size_t i = actors.size();
-	while (i--) {
-		//For each Actor present
-		//This must go AFTER the fog!
-		//(maybe we should be using the queue?)
-		actors[i]->overHead.Draw();
-	}
+	// This must go AFTER the fog!
+	DrawOverheadText();
 
 	oldGameTime = gametime;
 
 	// Show wallpolygons
 	if (debugFlags & (DEBUG_SHOW_WALLS_ALL|DEBUG_SHOW_DOORS_DISABLED)) {
-		const auto& viewportWallsAll = WallsIntersectingRegion(viewport, true);
-		for (const auto& poly : viewportWallsAll.first) {
-			const Point& origin = poly->BBox.origin - viewport.origin;
+		DrawWallPolygons(viewport);
+	}
+}
 
-			if (poly->wall_flag&WF_DISABLED) {
-				if (debugFlags & DEBUG_SHOW_DOORS_DISABLED) {
-					VideoDriver->DrawPolygon( poly.get(), origin, ColorGray, true, BlitFlags::BLENDED|BlitFlags::HALFTRANS);
-				}
-				continue;
+void Map::DrawOverheadText() const
+{
+	for (const auto& ip : TMap->GetInfoPoints()) {
+		ip->overHead.Draw();
+	}
+
+	for (const auto& cont : TMap->GetContainers()) {
+		cont->overHead.Draw();
+	}
+
+	for (const auto& door : TMap->GetDoors()) {
+		door->overHead.Draw();
+	}
+
+	size_t count = actors.size();
+	while (count--) {
+		actors[count]->overHead.Draw();
+	}
+}
+
+void Map::DrawWallPolygons(const Region& viewport) const
+{
+	const auto& viewportWallsAll = WallsIntersectingRegion(viewport, true);
+	for (const auto& poly : viewportWallsAll.first) {
+		const Point& origin = poly->BBox.origin - viewport.origin;
+
+		if (poly->wall_flag & WF_DISABLED) {
+			if (debugFlags & DEBUG_SHOW_DOORS_DISABLED) {
+				VideoDriver->DrawPolygon(poly.get(), origin, ColorGray, true, BlitFlags::BLENDED | BlitFlags::HALFTRANS);
 			}
+			continue;
+		}
 
-			if ((debugFlags & (DEBUG_SHOW_WALLS|DEBUG_SHOW_WALLS_ANIM_COVER)) == 0) {
-				continue;
+		if ((debugFlags & (DEBUG_SHOW_WALLS | DEBUG_SHOW_WALLS_ANIM_COVER)) == 0) {
+			continue;
+		}
+
+		Color c = ColorYellow;
+		if (debugFlags & DEBUG_SHOW_WALLS_ANIM_COVER) {
+			if (poly->wall_flag & WF_COVERANIMS) {
+				// darker yellow for walls with WF_COVERANIMS
+				c.r -= 0x80;
+				c.g -= 0x80;
 			}
+		} else if ((debugFlags & DEBUG_SHOW_WALLS) == 0) {
+			continue;
+		}
 
-			Color c = ColorYellow;
-
-			if (debugFlags & DEBUG_SHOW_WALLS_ANIM_COVER) {
-				if (poly->wall_flag & WF_COVERANIMS) {
-					// darker yellow for walls with WF_COVERANIMS
-					c.r -= 0x80;
-					c.g -= 0x80;
-				}
-			} else if ((debugFlags & DEBUG_SHOW_WALLS) == 0) {
-				continue;
-			}
-
-			VideoDriver->DrawPolygon( poly.get(), origin, c, true, BlitFlags::BLENDED|BlitFlags::HALFTRANS);
-			
-			if (poly->wall_flag & WF_BASELINE) {
-				VideoDriver->DrawLine(poly->base0 - viewport.origin, poly->base1 - viewport.origin, ColorMagenta);
-			}
+		VideoDriver->DrawPolygon(poly.get(), origin, c, true, BlitFlags::BLENDED | BlitFlags::HALFTRANS);
+		if (poly->wall_flag & WF_BASELINE) {
+			VideoDriver->DrawLine(poly->base0 - viewport.origin, poly->base1 - viewport.origin, ColorMagenta);
 		}
 	}
 }
@@ -2026,42 +2002,36 @@ Door *Map::GetDoorByGlobalID(ieDword objectID) const
 {
 	if (!objectID) return NULL;
 
-	int doorCount = 0;
-	while (true) {
-		Door* door = TMap->GetDoor( doorCount++ );
-		if (!door)
-			return NULL;
-		if (door->GetGlobalID() == objectID)
+	for (const auto& door : area->TMap->GetDoors()) {
+		if (door->GetGlobalID() == objectID) {
 			return door;
+		}
 	}
+	return nullptr;
 }
 
 Container *Map::GetContainerByGlobalID(ieDword objectID) const
 {
 	if (!objectID) return NULL;
 
-	int containerCount = 0;
-	while (true) {
-		Container* container = TMap->GetContainer( containerCount++ );
-		if (!container)
-			return NULL;
-		if (container->GetGlobalID() == objectID)
+	for (const auto& container : area->TMap->GetContainers()) {
+		if (container->GetGlobalID() == objectID) {
 			return container;
+		}
 	}
+	return nullptr;
 }
 
 InfoPoint *Map::GetInfoPointByGlobalID(ieDword objectID) const
 {
 	if (!objectID) return NULL;
 
-	int ipCount = 0;
-	while (true) {
-		InfoPoint* ip = TMap->GetInfoPoint( ipCount++ );
-		if (!ip)
-			return NULL;
-		if (ip->GetGlobalID() == objectID)
+	for (const auto& ip : TMap->GetInfoPoints()) {
+		if (ip->GetGlobalID() == objectID) {
 			return ip;
+		}
 	}
+	return nullptr;
 }
 
 Actor* Map::GetActorByGlobalID(ieDword objectID) const
@@ -2088,21 +2058,15 @@ Scriptable* Map::GetScriptable(const Point& p, int flags, const Movable* checker
 	auto actor = GetActor(p, flags, checker);
 	if (actor) return actor;
 
-	size_t i = TMap->GetDoorCount();
-	while (i--) {
-		Door* door = TMap->GetDoor(i);
+	for (const auto& door : TMap->GetDoors()) {
 		if (door->IsOver(p)) return door;
 	}
 
-	i = TMap->GetContainerCount();
-	while (i--) {
-		Container* cont = TMap->GetContainer(i);
+	for (const auto& cont : TMap->GetContainers()) {
 		if (cont->IsOver(p)) return cont;
 	}
 
-	i = TMap->GetInfoPointCount();
-	while (i--) {
-		InfoPoint* ip = TMap->GetInfoPoint(i);
+	for (const auto& ip : TMap->GetInfoPoints()) {
 		if (ip->IsOver(p)) return ip;
 	}
 
@@ -2119,21 +2083,15 @@ std::vector<Scriptable*> Map::GetScriptablesInRect(const Point& p, unsigned int 
 	rect.y += radius / 4;
 	rect.h -= radius / 2;
 
-	size_t i = TMap->GetDoorCount();
-	while (i--) {
-		Door* door = TMap->GetDoor(i);
+	for (const auto& door : TMap->GetDoors()) {
 		if (door->BBox.IntersectsRegion(rect)) neighbours.emplace_back(door);
 	}
 
-	i = TMap->GetContainerCount();
-	while (i--) {
-		Container* cont = TMap->GetContainer(i);
+	for (const auto& cont : TMap->GetContainers()) {
 		if (cont->BBox.IntersectsRegion(rect)) neighbours.emplace_back(cont);
 	}
 
-	i = TMap->GetInfoPointCount();
-	while (i--) {
-		InfoPoint* ip = TMap->GetInfoPoint(i);
+	for (const auto& ip : TMap->GetInfoPoints()) {
 		if (ip->BBox.IntersectsRegion(rect)) neighbours.emplace_back(ip);
 	}
 	return neighbours;
@@ -2268,14 +2226,15 @@ void Map::PurgeArea(bool items)
 	}
 	//2. remove any non critical items
 	if (items) {
-		i = TMap->GetContainerCount();
-		while (i--) {
-			Container* c = TMap->GetContainer(i);
-			unsigned int j=c->inventory.GetSlotCount();
-			while (j--) {
-				const CREItem *itemslot = c->inventory.GetSlotItem(j);
-				if (itemslot->Flags&IE_INV_ITEM_CRITICAL) {
-					continue;
+		for (const auto& c : TMap->GetContainers()) {
+			if (c->containerType == IE_CONTAINER_PILE) {
+				unsigned int j = c->inventory.GetSlotCount();
+				while (j--) {
+					const CREItem* itemslot = c->inventory.GetSlotItem(j);
+					if (itemslot->Flags & IE_INV_ITEM_CRITICAL) {
+						continue;
+					}
+					c->inventory.RemoveItem(j);
 				}
 			}
 			TMap->CleanupContainer(c);
@@ -2326,18 +2285,14 @@ Scriptable *Map::GetScriptableByDialog(const ResRef &resref) const
 	}
 
 	// pst has plenty of talking infopoints, eg. in ar0508 (Lothar's cabinet)
-	size_t i = TMap->GetInfoPointCount();
-	while (i--) {
-		InfoPoint* ip = TMap->GetInfoPoint(i);
+	for (const auto& ip : TMap->GetInfoPoints()) {
 		if (ip->GetDialog() == resref) {
 			return ip;
 		}
 	}
 
 	// move higher if someone needs talking doors
-	i = TMap->GetDoorCount();
-	while (i--) {
-		Door* door = TMap->GetDoor(i);
+	for (const auto& door : TMap->GetDoors()) {
 		if (door->GetDialog() == resref) {
 			return door;
 		}
@@ -3514,10 +3469,7 @@ Spawn *Map::GetSpawnRadius(const Point &point, unsigned int radius) const
 int Map::ConsolidateContainers()
 {
 	int itemcount = 0;
-	size_t containercount = TMap->GetContainerCount();
-	while (containercount--) {
-		Container* c = TMap->GetContainer(containercount);
-
+	for (const auto& c : TMap->GetContainers()) {
 		if (TMap->CleanupContainer(c) ) {
 			objectStencils.erase(c);
 			continue;
@@ -3571,9 +3523,7 @@ void Map::MoveVisibleGroundPiles(const Point &Pos)
 	Container *othercontainer;
 	othercontainer = GetPile(Pos);
 
-	int containercount = (int) TMap->GetContainerCount();
-	while (containercount--) {
-		Container * c = TMap->GetContainer( containercount);
+	for (const auto& c : TMap->GetContainers()) {
 		if (c->containerType == IE_CONTAINER_PILE && IsExplored(c->Pos)) {
 			//transfer the pile to the other container
 			MergePiles(c, othercontainer);

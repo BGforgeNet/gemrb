@@ -5892,9 +5892,7 @@ void GameScript::CopyGroundPilesTo(Scriptable* Sender, Action* parameters)
 		return;
 	}
 
-	size_t containerCount = map->GetTileMap()->GetContainerCount();
-	while (containerCount--) {
-		Container* pile = map->GetTileMap()->GetContainer(containerCount);
+	for (const auto& pile : map->GetTileMap()->GetContainers()) {
 		if (pile->containerType != IE_CONTAINER_PILE) continue;
 
 		// creating (or grabbing) the container in the other map at the given position
@@ -7454,6 +7452,9 @@ void GameScript::SpellHitEffectSprite(Scriptable* Sender, Action* parameters)
 	fx->TimingMode=FX_DURATION_INSTANT_PERMANENT_AFTER_BONUSES;
 	fx->Target = FX_TARGET_PRESET;
 	core->ApplyEffect(fx, target, src);
+
+	// see note in SpellHitEffectPoint, helps with #2109 efreeti all spawning at the same time
+	Sender->SetWait(3);
 }
 
 void GameScript::SpellHitEffectPoint(Scriptable* Sender, Action* parameters)
@@ -7781,10 +7782,8 @@ void GameScript::DestroyGroundPiles(Scriptable* Sender, Action* /*parameters*/)
 {
 	const Map* map = Sender->GetCurrentArea();
 	if (!map) return;
-	size_t containerCount = map->GetTileMap()->GetContainerCount();
 	TileMap* tm = map->GetTileMap();
-	while (containerCount--) {
-		Container* pile = tm->GetContainer(containerCount);
+	for (const auto& pile : tm->GetContainers()) {
 		if (pile->containerType != IE_CONTAINER_PILE) continue;
 
 		pile->inventory.DestroyItem("", 0,(ieDword) ~0); //destroy any and all
