@@ -29,10 +29,7 @@
 #include "exports.h"
 
 #include "Logging/Logger.h"
-#include "Strings/String.h"
-#include "fmt/std.h"
-
-#include <cstdarg>
+#include "fmt/std.h" // needed for Log specialization
 
 namespace GemRB {
 
@@ -50,7 +47,8 @@ void Log(LogLevel level, const char* owner, const char* message, ARGS&&... args)
 }
 
 /// Log an error and exit.
-template<typename... ARGS> [[noreturn]]
+template<typename... ARGS>
+[[noreturn]]
 void error(const char* owner, const char* format, ARGS&&... args)
 {
 	Log(FATAL, owner, format, std::forward<ARGS>(args)...);
@@ -61,7 +59,7 @@ void error(const char* owner, const char* format, ARGS&&... args)
 
 // poison printf
 #if !defined(__MINGW32__) && defined(__GNUC__)
-extern "C" int printf(const char* message, ...) __attribute__ ((deprecated("GemRB doesn't use printf; use Log instead.")));
+extern "C" int printf(const char* message, ...) __attribute__((deprecated("GemRB doesn't use printf; use Log instead.")));
 #endif
 
 #endif

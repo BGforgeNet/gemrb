@@ -20,6 +20,7 @@ import GemRB
 from GUIDefines import *
 from ie_stats import *
 from ie_spells import LS_MEMO
+import GameCheck
 import GUICommon
 import Spellbook
 import CommonTables
@@ -35,17 +36,14 @@ pc = 0			# << the pc
 NumClasses = 0		# << number of classes
 Classes = []		# << classes (ids)
 Level = []		# << levels for each class
-EnhanceGUI = 0		# << toggle for scrollbar and 25th hla slot
+
+# setup our scroll index
+GemRB.SetVar("HLATopIndex", 0)
 
 def OpenHLAWindow (actor, numclasses, classes, levels):
 	"""Opens the HLA selection window."""
 
 	global HLAWindow, HLADoneButton, HLATextArea, HLACount, NumClasses, pc, Classes, Level
-	global EnhanceGUI
-
-	#enhance GUI?
-	if (GemRB.GetVar("GUIEnhancements")&GE_SCROLLBARS):
-		EnhanceGUI = 1
 
 	# save our variables
 	pc = actor
@@ -55,7 +53,7 @@ def OpenHLAWindow (actor, numclasses, classes, levels):
 	HLACount = GemRB.GetVar ("HLACount")
 
 	# we use the same window as sorcerer spell selection
-	HLAWindow = GemRB.LoadWindow (8)
+	HLAWindow = GemRB.LoadWindow (8, "GUIREC")
 
 	# get all our HLAs (stored in HLAAbilities)
 	GetHLAs ()
@@ -65,7 +63,10 @@ def OpenHLAWindow (actor, numclasses, classes, levels):
 	TitleLabel.SetText (63818)
 
 	# create the done button
-	HLADoneButton = HLAWindow.GetControl (28)
+	if GameCheck.IsBG2EE ():
+		HLADoneButton = HLAWindow.GetControl (42)
+	else:
+		HLADoneButton = HLAWindow.GetControl (28)
 	HLADoneButton.OnPress (HLADonePress)
 	HLADoneButton.SetText(11973)
 	HLADoneButton.MakeDefault()
@@ -75,17 +76,18 @@ def OpenHLAWindow (actor, numclasses, classes, levels):
 		HLADoneButton.SetDisabled(False)
 
 	# setup our text area
-	HLATextArea = HLAWindow.GetControl(26)
+	if GameCheck.IsBG2EE ():
+		HLATextArea = HLAWindow.GetControl (41)
+	else:
+		HLATextArea = HLAWindow.GetControl (26)
 
 	print("Number of HLAs:",len (HLAAbilities))
 
 	# create a scrollbar if need-be
-	if ( len (HLAAbilities) >= 25 ) and EnhanceGUI:
+	if len (HLAAbilities) >= 25:
 		# setup extra 25th HLA slot:
 		HLAWindow.CreateButton (24, 231, 345, 42, 42)
 		if ( len (HLAAbilities) > 25):
-			# setup our scroll index
-			GemRB.SetVar("HLATopIndex", 0)
 			# setup scrollbar
 			ScrollBar = HLAWindow.CreateScrollBar (1000, {'x' : 290, 'y' : 142, 'w' : 16, 'h' : 252}, "GUISCRCW")
 			ScrollBar.OnChange (HLAShowAbilities)
@@ -148,8 +150,8 @@ def HLAShowAbilities ():
 
 	j = ( GemRB.GetVar("HLATopIndex") + 1 ) * 5 - 5
 
-	# we have a grid of 24 abilites
-	for i in range (24+EnhanceGUI):
+	# we have a grid of 24+1 abilites
+	for i in range (25):
 		# ensure we can learn this many abilites
 		if len (HLAAbilities) < 25 and i == 24: #break if we don't need extra 25th button
 			break
@@ -256,7 +258,7 @@ def HLAShowSelectedAbilities ():
 	j = ( GemRB.GetVar("HLATopIndex") + 1 ) * 5 - 5
 
 	# mark all of the abilities picked thus far
-	for i in range (24+EnhanceGUI):
+	for i in range (25):
 		if i + j >= len (HLANewAbilities): # make sure we don't call unavailable indexes
 			break
 		if HLANewAbilities[i+j]:

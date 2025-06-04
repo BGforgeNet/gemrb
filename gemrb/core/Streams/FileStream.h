@@ -28,17 +28,16 @@
 #ifndef FILESTREAM_H
 #define FILESTREAM_H
 
+#include "SClassID.h"
+#include "exports.h"
+
 #include "DataStream.h"
 
-#include "exports.h"
-#include "globals.h"
-#include "SClassID.h"
-
 #ifdef WIN32
-#include "../../platforms/windows/WindowsFile.h"
+	#include "../../platforms/windows/WindowsFile.h"
 using FileT = GemRB::WindowsFile;
 #else
-#include "PosixFile.h"
+	#include "PosixFile.h"
 using FileT = GemRB::PosixFile;
 #endif
 
@@ -54,6 +53,7 @@ private:
 	FileT str;
 	bool opened = true;
 	bool created = true;
+
 public:
 	explicit FileStream(FileT&&);
 	FileStream(void);
@@ -70,16 +70,18 @@ public:
 	strret_t Seek(stroff_t pos, strpos_t startpos) override;
 
 	void Close();
+
 public:
 	/** Opens the specified file.
 	 *
 	 *  Returns NULL, if the file can't be opened.
 	 */
 	static FileStream* OpenFile(const path_t& filename);
+
 private:
 	void FindLength();
 };
 
 }
 
-#endif  // ! FILESTREAM_H
+#endif // ! FILESTREAM_H

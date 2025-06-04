@@ -43,22 +43,22 @@ enum orient_t : uint8_t {
 			   |
 			   |
 	*/
-	S		= 0,
-	SSW		= 1,
-	SW		= 2,
-	WSW		= 3,
-	W		= 4,
-	WNW		= 5,
-	NW		= 6,
-	NNW		= 7,
-	N 		= 8,
-	NNE 	= 9,
-	NE 		= 10,
-	ENE 	= 11,
-	E 		= 12,
-	ESE 	= 13,
-	SE 		= 14,
-	SSE 	= 15,
+	S = 0,
+	SSW = 1,
+	SW = 2,
+	WSW = 3,
+	W = 4,
+	WNW = 5,
+	NW = 6,
+	NNW = 7,
+	N = 8,
+	NNE = 9,
+	NE = 10,
+	ENE = 11,
+	E = 12,
+	ESE = 13,
+	SE = 14,
+	SSE = 15,
 
 	// this is not a valid orientation
 	INVALID = 16,
@@ -67,6 +67,9 @@ enum orient_t : uint8_t {
 
 /////maximum animation orientation count (used in many places)
 #define MAX_ORIENT 0x10 // uint8_t(orient_t::MAX)
+
+static const unsigned char SixteenToNine[MAX_ORIENT] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1 };
+static const unsigned char SixteenToFive[MAX_ORIENT] = { 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 3, 3, 2, 2, 1, 1 };
 
 inline orient_t RandomOrientation()
 {
@@ -146,7 +149,8 @@ inline Point OrientedOffset(orient_t face, int offset)
 	return Point(x * offset, y * offset);
 }
 
-inline orient_t GetNextFace(orient_t old, orient_t next) {
+inline orient_t GetNextFace(orient_t old, orient_t next)
+{
 	if (old != next) {
 		if (ClampToOrientation(next - old) <= MAX_ORIENT / 2) {
 			old = NextOrientation(old);

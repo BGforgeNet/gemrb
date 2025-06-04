@@ -35,7 +35,6 @@ KitTable = 0
 Init = 0
 MyChar = 0
 KitSelected = 0 #store clicked kit on redraw as number within RowCount
-EnhanceGUI = GemRB.GetVar("GUIEnhancements")&GE_SCROLLBARS #extra kit button and scroll bar toggle
 
 def OnLoad():
 	global KitWindow, TextAreaControl, DoneButton
@@ -81,23 +80,20 @@ def OnLoad():
 
 	TopIndex = 0
 	GemRB.SetVar("TopIndex", 0)
-	if EnhanceGUI:
-		tmpRowCount = RowCount
-		if RowCount>10: #create 11 kit button
-			extrakit = KitWindow.CreateButton (15, 18, 250, 271, 20)
-			extrakit.SetState(IE_GUI_BUTTON_DISABLED)
-			extrakit.SetFlags(IE_GUI_BUTTON_RADIOBUTTON|IE_GUI_BUTTON_CAPS, OP_OR)
-			extrakit.SetSprites("GUICGBC",0, 0,1,2,3)
-			RowCount = 11
 
-		if tmpRowCount>11: #create scroll bar
-			ScrollBar = KitWindow.CreateScrollBar(1000, {'x' : 290, 'y' : 50, 'w' : 16, 'h' : 220}, "GUISCRCW")
-			ScrollBar.SetVarAssoc ("TopIndex", tmpRowCount-10, 0, tmpRowCount-10)
-			ScrollBar.OnChange (RedrawKits)
-			KitWindow.SetEventProxy(ScrollBar)
+	tmpRowCount = RowCount
+	if RowCount > 10: # create 11th kit button
+		extrakit = KitWindow.CreateButton (15, 18, 250, 271, 20)
+		extrakit.SetState (IE_GUI_BUTTON_DISABLED)
+		extrakit.SetFlags (IE_GUI_BUTTON_RADIOBUTTON | IE_GUI_BUTTON_CAPS, OP_OR)
+		extrakit.SetSprites ("GUICGBC", 0, 0, 1, 2, 3)
+		RowCount = 11
 
-	elif not EnhanceGUI and RowCount>10:
-		RowCount = 10
+	if tmpRowCount > 11: # create scrollbar
+		ScrollBar = KitWindow.CreateScrollBar (1000, {'x' : 290, 'y' : 50, 'w' : 16, 'h' : 220}, "GUISCRCW")
+		ScrollBar.SetVarAssoc ("TopIndex", tmpRowCount - 10, 0, tmpRowCount - 10)
+		ScrollBar.OnChange (RedrawKits)
+		KitWindow.SetEventProxy (ScrollBar)
 
 	for i in range(RowCount):
 		if i<4:
@@ -137,24 +133,24 @@ def RedrawKits():
 			Button = KitWindow.GetControl(i+5)
 		Button.SetState(IE_GUI_BUTTON_DISABLED)
 		if not KitTable:
-			Kit = 0
+			KitIndex = 0
 			KitName = CommonTables.Classes.GetValue (ClassName, "NAME_REF")
 		else:
-			Kit = KitTable.GetValue (i+TopIndex,0)
+			KitIndex = KitTable.GetValue (i + TopIndex, 0)
 			if ClassName == "MAGE":
 				KitName = SchoolList.GetValue (i+TopIndex, 0)
-				if Kit == 0:
-					KitName = SchoolList.GetValue (0, 0)
+				if KitIndex == 0:
+					KitName = SchoolList.GetValue ("GENERALIST", "NAME_REF")
 					Button.SetState(IE_GUI_BUTTON_ENABLED)
 					if Init: #preselection of mage plain kit
 						Button.SetState(IE_GUI_BUTTON_SELECTED)
 						KitSelected = i+TopIndex
 						Init=0
-				if Kit != "*":
-					EnabledButtons.append(Kit-21)
+				if KitIndex != "*":
+					EnabledButtons.append (KitIndex - 21)
 			else:
-				if Kit and Kit != "*":
-					KitName = CommonTables.KitList.GetValue(Kit, 1)
+				if KitIndex and KitIndex != "*":
+					KitName = CommonTables.KitList.GetValue (KitIndex, 1)
 				else:
 					KitName = CommonTables.Classes.GetValue (ClassName, "NAME_REF")
 		Button.SetText(KitName)
@@ -164,7 +160,7 @@ def RedrawKits():
 				Button.SetState(IE_GUI_BUTTON_SELECTED)
 				KitSelected = i+TopIndex
 				Init=0
-		if Kit == "*":
+		if KitIndex == "*":
 			continue
 		if Init and i+TopIndex==0:
 			if EnabledButtons:
@@ -184,29 +180,29 @@ def KitPress():
 	ButtonPressed=GemRB.GetVar("ButtonPressed")
 	KitSelected = ButtonPressed + TopIndex
 	if not KitTable:
-		Kit = 0
+		KitIndex = 0
 	else:
-		Kit = KitTable.GetValue (ButtonPressed+TopIndex, 0)
+		KitIndex = KitTable.GetValue (ButtonPressed + TopIndex, 0)
 		if ClassName == "MAGE":
 			if ButtonPressed + TopIndex == 0:
-				Kit = 0
+				KitIndex = 0
 			else:
-				Kit = ButtonPressed + TopIndex + 21
+				KitIndex = ButtonPressed + TopIndex + 21
 
-	if ClassName == "MAGE" and Kit != 0:
-		GemRB.SetVar("MAGESCHOOL", Kit-21) # hack: -21 to make the generalist 0
+	if ClassName == "MAGE" and KitIndex != 0:
+		GemRB.SetVar ("MAGESCHOOL", KitIndex - 21) # hack: -21 to make the generalist 0
 	else:
 		GemRB.SetVar("MAGESCHOOL", 0) # so bards don't get schools
 
-	if Kit == 0:
+	if KitIndex == 0:
 		KitDescription = CommonTables.Classes.GetValue (ClassName, "DESC_REF")
 	else:
-		KitDescription = CommonTables.KitList.GetValue(Kit, 3)
+		KitDescription = CommonTables.KitList.GetValue (KitIndex, 3)
 
 	TextAreaControl.SetText(KitDescription)
 	DoneButton.SetState(IE_GUI_BUTTON_ENABLED)
 
-	GemRB.SetVar("Class Kit", Kit)
+	GemRB.SetVar ("Class Kit", KitIndex)
 
 	return
 
@@ -226,10 +222,13 @@ def NextPress():
 	KitIndex = GemRB.GetVar ("Class Kit")
 	MageSchool = GemRB.GetVar ("MAGESCHOOL")
 	if MageSchool and not KitIndex:
-		KitIndex = CommonTables.KitList.FindValue (6, SchoolList.GetValue (MageSchool, 3))
+		KitValue = SchoolList.GetValue (MageSchool, 3)
+	elif KitIndex:
+		KitValue = CommonTables.KitList.GetValue (KitIndex, 6)
+	else:
+		KitValue = 0
 
 	#save the kit
-	KitValue = (0x4000 + KitIndex)
 	GemRB.SetPlayerStat (MyChar, IE_KIT, KitValue)
 
 	GemRB.SetNextScript("CharGen4") #abilities

@@ -23,10 +23,6 @@
 
 #include "DataFileMgr.h"
 
-#include "globals.h"
-
-#include <cstring>
-#include <unordered_map>
 #include <vector>
 
 namespace GemRB {
@@ -52,7 +48,8 @@ public:
 
 private:
 	template<typename T>
-	T GetAs(StringView Tag, StringView Key, const T Default) const {
+	T GetAs(StringView Tag, StringView Key, const T Default) const
+	{
 		auto result = find(Tag);
 		if (result != end()) {
 			return result->GetAs<T>(Key, Default);

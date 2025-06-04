@@ -75,10 +75,10 @@ def LocationPressed ():
 
 	return
 
-def OpenFloatMenuWindow (p):
+def OpenFloatMenuWindow (point):
 	if GameCheck.IsPST():
 		import FloatMenuWindow
-		FloatMenuWindow.OpenFloatMenuWindow(p['x'], p['y'])
+		FloatMenuWindow.OpenFloatMenuWindow(**point)
 	else:
 		GemRB.GameControlSetTargetMode (TARGET_MODE_NONE)
 
@@ -124,8 +124,21 @@ def CheckStat20 (Actor, Stat, Diff):
 		return True
 	return False
 
+def CantUseSpellbookWindow (pc, priest = False):
+	if GameCheck.IsIWD2 ():
+		return False
+
+	ClassName = GetClassRowName (pc)
+	if priest:
+		CantCast = CommonTables.ClassSkills.GetValue (ClassName, "DRUIDSPELL") == "*"
+		CantCast &= CommonTables.ClassSkills.GetValue (ClassName, "CLERICSPELL") == "*"
+	else:
+		CantCast = CommonTables.ClassSkills.GetValue (ClassName, "MAGESPELL") == "*"
+
+	return CantCast
+
 def GetGUISpellButtonCount ():
-	if GameCheck.HasHOW() or GameCheck.IsBG2():
+	if GameCheck.HasHOW() or GameCheck.IsBG2OrEE ():
 		return 24
 	else:
 		return 20
@@ -348,9 +361,6 @@ def GetKitIndex (actor):
 	Kit = GemRB.GetPlayerStat (actor, IE_KIT)
 	KitIndex = 0
 
-	if Kit & 0xc000 == 0x4000:
-		KitIndex = Kit & 0xfff
-
 	# carefully looking for kit by the usability flag
 	# since the barbarian kit id clashes with the no-kit value
 	if KitIndex == 0 and Kit != 0x4000:
@@ -557,7 +567,7 @@ def NamelessOneClass (actor):
 def CanDualClass(actor):
 	# race restriction (human)
 	RaceName = CommonTables.Races.FindValue ("ID", GemRB.GetPlayerStat (actor, IE_RACE, 1))
-	if not RaceName:
+	if RaceName == None:
 		return 0
 	RaceName = CommonTables.Races.GetRowName (RaceName)
 	RaceDual = CommonTables.Races.GetValue (RaceName, "CANDUAL", GTV_STR)
@@ -659,8 +669,12 @@ def CanDualClass(actor):
 	return 1
 
 def IsWarrior (actor):
-	IsWarrior = CommonTables.ClassSkills.GetValue (GetClassRowName(actor), "NO_PROF", GTV_INT)
+	if GameCheck.IsPST ():
+		# no column there
+		className = GetClassRowName (actor)
+		return "FIGHTER" in className
 
+	IsWarrior = CommonTables.ClassSkills.GetValue (GetClassRowName(actor), "NO_PROF", GTV_INT)
 	# warriors get only a -2 penalty for wielding weapons they are not proficient with
 	# FIXME: make the check more robust, someone may change the value!
 	IsWarrior = (IsWarrior == -2)
@@ -677,58 +691,6 @@ def IsWarrior (actor):
 		# but there are also non-warrior to non-warrior dualclasses, so just use the new class check
 
 	return IsWarrior
-
-def SetupDamageInfo (pc, Button, Window):
-	hp = GemRB.GetPlayerStat (pc, IE_HITPOINTS)
-	hp_max = GemRB.GetPlayerStat (pc, IE_MAXHITPOINTS)
-	state = GemRB.GetPlayerStat (pc, IE_STATE_ID)
-
-	if hp_max < 1 or hp == "?":
-		ratio = 0.0
-	else:
-		ratio = hp / float(hp_max)
-
-	if hp < 1 or (state & STATE_DEAD):
-		c = {'r' : 64, 'g' : 64, 'b' : 64, 'a' : 255}
-		Button.SetOverlay (0, c, c)
-
-	if ratio == 1.0:
-		band = 0
-		color = {'r' : 255, 'g' : 255, 'b' : 255}  # white
-	elif ratio >= 0.75:
-		band = 1
-		color = {'r' : 0, 'g' : 255, 'b' : 0}  # green
-	elif ratio >= 0.50:
-		band = 2
-		color = {'r' : 255, 'g' : 255, 'b' : 0}  # yellow
-	elif ratio >= 0.25:
-		band = 3
-		color = {'r' : 255, 'g' : 128, 'b' : 0}  # orange
-	else:
-		band = 4
-		color = {'r' : 255, 'g' : 0, 'b' : 0}  # red
-
-	if GemRB.GetVar("Old Portrait Health") or not GameCheck.IsIWD2():
-		# draw the blood overlay
-		if hp >= 1 and not (state & STATE_DEAD):
-			c1 = {'r' : 0x70, 'g' : 0, 'b' : 0, 'a' : 0xff}
-			c2 = {'r' : 0xf7, 'g' : 0, 'b' : 0, 'a' : 0xff}
-			Button.SetOverlay (ratio, c1, c2)
-	else:
-		# scale the hp bar under the portraits and recolor it
-		# GUIHITPT has 5 frames with different severity colors
-		# luckily their ids follow a nice pattern
-		hpBar = Window.GetControl (pc-1 + 50)
-		hpBar.SetBAM ("GUIHITPT", band, 0)
-		hpBar.SetPictureClipping (ratio)
-		hpBar.SetFlags (IE_GUI_BUTTON_NO_IMAGE, OP_OR)
-
-	ratio_str = ""
-	if hp != "?":
-		ratio_str = "\n%d/%d" %(hp, hp_max)
-	Button.SetTooltip (GemRB.GetPlayerName (pc, 1) + ratio_str)
-
-	return ratio_str, color
 
 # set MAGESCHOOL to mage school (kit) index
 def UpdateMageSchool(pc):
@@ -843,7 +805,7 @@ def GetACStyleBonus (pc):
 	return WStyleTable.GetValue (str(stars), "AC", GTV_INT)
 
 def AddDefaultVoiceSet (VoiceList, Voices):
-	if GameCheck.IsBG1 () or GameCheck.IsBG2 ():
+	if GameCheck.IsBG1 () or GameCheck.IsBG2OrEE ():
 		Options = collections.OrderedDict(enumerate(Voices))
 		Options[-1] = "default"
 		Options = collections.OrderedDict(sorted(Options.items()))
@@ -857,7 +819,10 @@ def OverrideDefaultVoiceSet (Gender, CharSound):
 		if GameCheck.IsBG1 ():
 			Gender2Sound = [ "", "mainm", "mainf" ]
 			CharSound = Gender2Sound[Gender]
-		elif GameCheck.IsBG2 ():
+		elif GameCheck.IsBG2OrEE ():
 			Gender2Sound = [ "", "male005", "female4" ]
 			CharSound = Gender2Sound[Gender]
 	return CharSound
+
+def BindControlCallbackParams(fn, *args):
+	return lambda ctl: fn(*args)

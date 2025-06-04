@@ -22,10 +22,11 @@
 
 #include "Game.h"
 #include "Interface.h"
-#include "GUI/GUIAnimation.h"
+#include "Map.h"
+#include "RNG.h"
+
 #include "GUI/GameControl.h"
 #include "GUI/WindowManager.h"
-#include "RNG.h"
 
 namespace GemRB {
 
@@ -64,7 +65,9 @@ void GlobalTimer::SetMoveViewPort(Point p, int spd, bool center)
 		p.x -= currentVP.w / 2;
 		p.y -= currentVP.h / 2;
 	}
+	if (goal == p) return;
 	goal = p;
+
 	speed = spd;
 	if (speed == 0) {
 		// do this instantly, even if paused
@@ -86,7 +89,7 @@ void GlobalTimer::DoStep(int count)
 	if (p != goal && !goal.IsInvalid()) {
 		int d = Distance(goal, p);
 		int magnitude = count * speed;
-		
+
 		if (d <= magnitude) {
 			p = goal;
 		} else {
@@ -95,7 +98,7 @@ void GlobalTimer::DoStep(int count)
 			p.y = (1 - r) * p.y + r * goal.y;
 		}
 	}
-	
+
 	if (!gc->MoveViewportTo(p, false)) {
 		// we have moved as close to the goal as possible
 		// something must have set a goal beyond the map
@@ -114,7 +117,7 @@ void GlobalTimer::DoStep(int count)
 			gc->MoveViewportUnlockedTo(shakeP, false);
 		}
 	}
-	
+
 	currentVP = gc->Viewport();
 }
 
@@ -122,11 +125,11 @@ bool GlobalTimer::UpdateViewport(tick_t thisTime)
 {
 	tick_t advance = thisTime - startTime;
 	tick_t interval = core ? (1000 / core->Time.ticksPerSec) : 66; // length of a tick in ms
-	if ( advance < interval) {
+	if (advance < interval) {
 		return false;
 	}
 
-	ieDword count = ieDword(advance/interval);
+	ieDword count = ieDword(advance / interval);
 	DoStep(count);
 	DoFadeStep(count);
 	return true;
@@ -134,8 +137,8 @@ bool GlobalTimer::UpdateViewport(tick_t thisTime)
 
 bool GlobalTimer::Update()
 {
-	Map *map;
-	Game *game;
+	Map* map;
+	Game* game;
 	const GameControl* gc;
 	tick_t thisTime = GetMilliseconds();
 
@@ -203,7 +206,8 @@ end:
 	return true;
 }
 
-void GlobalTimer::DoFadeStep(ieDword count) {
+void GlobalTimer::DoFadeStep(ieDword count)
+{
 	WindowManager* wm = core->GetWindowManager();
 	if (fadeOutFallback > 0) {
 		--fadeOutFallback;
@@ -224,20 +228,20 @@ void GlobalTimer::DoFadeStep(ieDword count) {
 			fadeToCounter -= count;
 		}
 
-		wm->FadeColor.a = 255 * (double( fadeToMax - fadeToCounter ) / fadeToMax / fadeToFactor);
+		wm->FadeColor.a = 255 * (double(fadeToMax - fadeToCounter) / fadeToMax / fadeToFactor);
 	}
 	//i think this 'else' is needed now because of the 'goto' cut above
-	else if (fadeFromCounter!=fadeFromMax) {
-		if (fadeFromCounter>fadeFromMax) {
-			fadeFromCounter-=count;
-			if (fadeFromCounter<fadeFromMax) {
-				fadeFromCounter=fadeFromMax;
+	else if (fadeFromCounter != fadeFromMax) {
+		if (fadeFromCounter > fadeFromMax) {
+			fadeFromCounter -= count;
+			if (fadeFromCounter < fadeFromMax) {
+				fadeFromCounter = fadeFromMax;
 				fadeFromFactor = 1;
 			}
 		} else {
-			fadeFromCounter+=count;
-			if (fadeToCounter>fadeFromMax) {
-				fadeToCounter=fadeFromMax;
+			fadeFromCounter += count;
+			if (fadeToCounter > fadeFromMax) {
+				fadeToCounter = fadeFromMax;
 				fadeToFactor = 1;
 			}
 		}
@@ -275,12 +279,12 @@ void GlobalTimer::SetFadeFromColor(tick_t Count, unsigned short factor)
 	fadeFromFactor = factor;
 }
 
-void GlobalTimer::SetScreenShake(const Point &shake, int count)
+void GlobalTimer::SetScreenShake(const Point& shake, int count)
 {
 	shakeVec.x = std::abs(shake.x);
 	shakeVec.y = std::abs(shake.y);
-	shakeCounter = count + 1;
-	
+	shakeCounter = std::max(0, count + 1);
+
 	if (goal.IsInvalid()) {
 		const GameControl* gc = core->GetGameControl();
 		currentVP = gc->Viewport();

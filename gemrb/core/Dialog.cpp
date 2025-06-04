@@ -20,10 +20,14 @@
 
 #include "Dialog.h"
 
-#include "GameScript/GameScript.h"
 #include "RNG.h"
 
+#include "GameScript/GameScript.h"
+#include "Scriptable/Scriptable.h"
+
 namespace GemRB {
+
+enum BlitFlags : uint32_t;
 
 Dialog::~Dialog(void)
 {
@@ -45,7 +49,7 @@ DialogState* Dialog::GetState(unsigned int index) const
 void Dialog::FreeDialogState(DialogState* ds)
 {
 	for (unsigned int i = 0; i < ds->transitionsCount; i++) {
-		DialogTransition *trans = ds->transitions[i];
+		DialogTransition* trans = ds->transitions[i];
 		for (auto& action : trans->actions) {
 			action->Release();
 		}
@@ -63,7 +67,7 @@ void Dialog::FreeDialogState(DialogState* ds)
 int Dialog::FindFirstState(Scriptable* target) const
 {
 	for (unsigned int i = 0; i < TopLevelCount; i++) {
-		const Condition *cond = GetState(Order[i])->condition;
+		const Condition* cond = GetState(Order[i])->condition;
 		if (cond && cond->Evaluate(target)) {
 			return Order[i];
 		}
@@ -75,15 +79,15 @@ int Dialog::FindRandomState(Scriptable* target) const
 {
 	unsigned int max = TopLevelCount;
 	if (!max) return -1;
-	unsigned int pick = RAND(0u, max-1);
+	unsigned int pick = RAND(0u, max - 1);
 	for (unsigned int i = pick; i < max; i++) {
-		const Condition *cond = GetState(i)->condition;
+		const Condition* cond = GetState(i)->condition;
 		if (cond && cond->Evaluate(target)) {
 			return i;
 		}
 	}
 	for (unsigned int i = 0; i < pick; i++) {
-		const Condition *cond = GetState(i)->condition;
+		const Condition* cond = GetState(i)->condition;
 		if (cond && cond->Evaluate(target)) {
 			return i;
 		}

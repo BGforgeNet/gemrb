@@ -39,8 +39,8 @@ or missing features ... then report and fix them,
 - check the list on the [bugtracker](https://github.com/gemrb/gemrb/issues),
 - check the [Roadmap](#roadmap) to see what priorities we are currently working on,
 - check out the FIXMEs and TODOs spread throughout the code,
-- write one of the [missing file format plugins](https://github.com/gemrb/gemrb/issues/164) (doesn't require any game!),
 - pick some of the [janitorial](https://github.com/gemrb/gemrb/labels/janitorial) tasks (eg. refactoring),
+- work on tools like [iesh](https://github.com/gemrb/iesh/issues/18) (python), [Near Infinity](https://github.com/gemrb/gemrb/issues/2347) (java) or [content creation workflows](https://github.com/gemrb/gemrb/issues/1051),
 - ask either on the forums or chat.
 
 You can also help by:
@@ -81,7 +81,7 @@ programmers alone can't figure everything out. You can help out by sharing your 
 reports on the tracker.
 
 Take an active part in the GemRB and Gibberlings3 communities, helping other users, proposing
-ideas and representing our "colours".
+ideas and representing our colours.
 
 You can help spread the word about the project outside the main channels. Try to bring in new contributors,
 blog, vlog (Let's Play?), social media posts, organize an event, write a song or other undefined creative approaches.
@@ -115,12 +115,9 @@ so we can improve our process and documentation!
 ## Axioms of Style
 
 1. When in doubt, follow the style of the existing function or file.
-   - When creating a new file, follow the style of existing files, pe. Game.h/.cpp.
-     - Do not forget to include the license header.
-2. Code indentation is done with single tabulators.
-3. Spaces around operators (foo += bar;).
-4. Try to avoid creating very long lines. There is no set maximum.
-5. Sort includes by type (module, project, system) and alphabetically.
+2. Clang-format is enforced as a pre-commit hook. It's best if you
+configure your editor to run it for you. If you need to do it manually,
+check out `git clang-format`.
 
 
 ## Useful links
@@ -154,12 +151,22 @@ to display diffs of included binary files (spells and other overrides).
 
 - `make test` will run the core test suite if you built with googletest installed
 
+- `git blame` ignoring reformatting commits
+
+The `.git-blame-ignore-revs` specifies which commits git should ignore when
+finding the last time a line was changed. Many tools use it by default,
+except git itself, so you need to run:
+
+   git config --add blame.ignoreRevsFile .git-blame-ignore-revs
+
+If you're using cmake, this has been done for you.
+
 
 ## Version tracking
 
 1. Split your changes (commits) into well-rounded units of logic (`git commit -p` can help).
-2. Read the commit diff to verify you're commiting what you think. That indentation matches
-   and that no extraneous changes are included (eg. random style changes from bad IDE settings).
+2. Read the commit diff to verify you're commiting what you think and no extraneous changes
+   are included.
 3. Each commit should compile and run. You can do quick fixups with `git commit --amend -p`.
 4. Commit messages should be descriptive (why is more important than what, include
    area/creature/script names if possible).
@@ -172,8 +179,7 @@ All of this makes reviewing and bisecting for regressions easier.
 
 1. Squash merge only if the history is a mess or it makes more
 sense (eg. consecutive commits through the github website). 
-2. For release planning check the milestones and any pending pull requests.
-  2.1. When starting the final approach, use `admin/github_release.checklist`
+2. For release planning check the milestones and `admin/github_release.checklist`
 as a template to track progress in a dedicated issue.
 3. Releases are usually made when larger pieces of work land or many smaller
 fixes have accrued.
@@ -209,8 +215,9 @@ You can check what we're working towards in the current release by reading the
 NEWS file and, as far as bugtracker backlog goes, by looking at the version's
 [milestone](https://github.com/gemrb/gemrb/milestones).
 
-The plan for 0.9.4 is to work on iwd2 completability, annoying pst oddities,
-deal with some postponed issues, and whatever piques the contributor's fancy.
+The plan for 0.9.5 is to work on polishing, annoying pst oddities, maybe getting
+bg2ee support out of experimental stage, deal with some postponed issues, and
+whatever piques the contributor's fancy.
 
 We're looking for ninjas to help with python porting, a SDL_ttf backend,
 GLESv2 support (no hw, see [#938](https://github.com/gemrb/gemrb/issues/938)) and

@@ -18,8 +18,6 @@
 
 #include "StringConversion.h"
 
-#include "ie_types.h"
-
 #include "Iconv.h"
 #include "Interface.h"
 
@@ -41,7 +39,7 @@ static String StringFromEncodedData(const void* inptr, size_t length, const std:
 		cd = iconv_open("UTF-16LE", encoding.c_str());
 	}
 
-	if (cd == (iconv_t)-1) {
+	if (cd == (iconv_t) -1) {
 		Log(ERROR, "String", "iconv_open(UTF-16, {}) failed with error: {}", encoding, strerror(errno));
 		return u"";
 	}
@@ -66,7 +64,7 @@ static String StringFromEncodedData(const void* inptr, size_t length, const std:
 	return buffer;
 }
 
-template <typename VIEW>
+template<typename VIEW>
 String StringFromEncodedView(const VIEW& view, const EncodingStruct& encoding)
 {
 	return StringFromEncodedData(view.c_str(), view.length() * sizeof(typename VIEW::value_type), encoding.encoding);
@@ -79,7 +77,7 @@ String StringFromEncodedView(const StringView& view, const EncodingStruct& encod
 
 String StringFromASCII(const StringView& asciiview)
 {
-	static const EncodingStruct enc {"ASCII", false, false, false};
+	static const EncodingStruct enc { "ASCII", false, false, false };
 	return StringFromEncodedView(asciiview, enc);
 }
 
@@ -98,7 +96,7 @@ String StringFromTLK(const StringView& tlkview)
 
 String StringFromUtf8(const StringView& utf8view)
 {
-	static const EncodingStruct enc {"UTF-8", false, true, false};
+	static const EncodingStruct enc { "UTF-8", false, true, false };
 	return StringFromEncodedView(utf8view, enc);
 }
 
@@ -138,7 +136,8 @@ std::string RecodedStringFromWideStringBytes(const char16_t* bytes, size_t bytes
 	return buffer;
 }
 
-static std::string RecodedStringFromString(const String& string, const std::string& encoding) {
+static std::string RecodedStringFromString(const String& string, const std::string& encoding)
+{
 	return RecodedStringFromWideStringBytes(string.c_str(), string.length() * sizeof(char16_t), encoding);
 }
 
@@ -154,7 +153,8 @@ std::string MBStringFromString(const String& string)
 	return newString;
 }
 
-std::string TLKStringFromString(const String& string) {
+std::string TLKStringFromString(const String& string)
+{
 	auto newString = RecodedStringFromString(string, core->TLKEncoding.encoding);
 
 	auto zero = newString.find('\0');

@@ -25,6 +25,7 @@ from ie_stats import *
 from ie_action import ACT_LEFT, ACT_RIGHT
 from ie_spells import *
 from ie_restype import RES_2DA
+from ie_modal import MS_TURNUNDEAD
 
 #################################################################
 # this is in the operator module of the standard python lib
@@ -151,11 +152,16 @@ def GetMemorizedSpells(actor, BookType, level):
 		Spell = GemRB.GetSpell(Spell0["SpellResRef"])
 		Spell['KnownCount'] = 1
 		Spell['MemoCount'] = Spell0["Flags"]
+		Spell['SpellIndex'] = i
 		memoSpells.append (Spell)
 
 	return memoSpells
 
 # direct access to the spellinfo struct
+def HasSpellinfoSpell(pc, resRef):
+	spellResRefs = GemRB.GetSpelldata (pc)
+	return resRef.upper() in spellResRefs
+
 # SpellIndex is the index of the spell in the struct, but we add a thousandfold of the spell type for later use in SpellPressed
 def GetSpellinfoSpells(actor, BookType):
 	memorizedSpells = []
@@ -195,11 +201,11 @@ def SortUsableSpells(memorizedSpells):
 # BookType is a spellbook type bitfield (1-mage, 2-priest, 4-innate and others in iwd2)
 # Offset is a control ID offset here for iwd2 purposes
 def SetupSpellIcons(Window, BookType, Start=0, Offset=0):
+	import GUICommon
 	actor = GemRB.GameGetFirstSelectedActor ()
 
 	# bardsongs weren't saved in iwd1, so learn them now if needed
 	if GameCheck.IsIWD1 () and BookType == (1 << IE_SPELL_TYPE_SONG) and HasSpell (actor, IE_SPELL_TYPE_SONG, 0, "SPIN151") == -1:
-		import GUICommon
 		level = GemRB.GetPlayerStat (actor, IE_LEVEL)
 		GUICommon.AddClassAbilities (actor, "clabbard", level, level)
 
@@ -228,7 +234,7 @@ def SetupSpellIcons(Window, BookType, Start=0, Offset=0):
 		memorizedSpells = SortUsableSpells(allSpells)
 
 	# start creating the controls
-	import GUICommonWindows
+	import ActionsWindow
 	# TODO: ASCOL, ROWS
 	#AsCol = CommonTables.SpellDisplay.GetValue (layout, "AS_COL")
 	#Rows = CommonTables.SpellDisplay.GetValue (layout, "ROWS")
@@ -239,7 +245,7 @@ def SetupSpellIcons(Window, BookType, Start=0, Offset=0):
 		Button = Window.GetControl (Offset)
 		Button.SetText ("")
 		if Start:
-			GUICommonWindows.SetActionIconWorkaround (Button, ACT_LEFT, 0)
+			ActionsWindow.SetActionIconWorkaround (Button, ACT_LEFT, 0)
 			Button.SetState (IE_GUI_BUTTON_UNPRESSED)
 		else:
 			Button.SetFlags (IE_GUI_BUTTON_NO_IMAGE, OP_SET)
@@ -248,6 +254,8 @@ def SetupSpellIcons(Window, BookType, Start=0, Offset=0):
 	# disable all spells if fx_disable_spellcasting was run with the same type
 	# but only if there are any spells of that type to disable
 	disabled_spellcasting = GemRB.GetPlayerStat(actor, IE_CASTING, 0)
+	classRowName = GUICommon.GetClassRowName (actor)
+	extraActionButton = not (GameCheck.IsIWD2() or GameCheck.IsPST()) and classRowName == "CLERIC_THIEF"
 	actionLevel = GemRB.GetVar ("ActionLevel")
 
 	# spellType will have IE_SPL_ITEM (...) not IE_SPELL_TYPE_PRIEST (...)!
@@ -260,6 +268,18 @@ def SetupSpellIcons(Window, BookType, Start=0, Offset=0):
 	for i in range (buttonCount):
 		Button = Window.GetControl (i+Offset+More)
 		Button.OnRightPress (None)
+
+		# yuck, handle offloaded cleric/thief icon
+		# original did picking, we do turning, since it is used less often
+		if i + Start == 0 and extraActionButton:
+			Button.SetActionIcon (globals(), 6, 1)
+			Button.OnPress (ActionsWindow.ActionTurnPressed)
+			if GemRB.GetModalState (actor) == MS_TURNUNDEAD:
+				Button.SetState (IE_GUI_BUTTON_SELECTED)
+			else:
+				Button.SetState (IE_GUI_BUTTON_ENABLED)
+			Button.SetText ("")
+			continue
 
 		if i+Start >= len(memorizedSpells):
 			Button.SetState (IE_GUI_BUTTON_DISABLED)
@@ -292,8 +312,9 @@ def SetupSpellIcons(Window, BookType, Start=0, Offset=0):
 			Button.EnableBorder(1, 0)
 		else:
 			Button.SetState (IE_GUI_BUTTON_UNPRESSED)
-			Button.OnPress (GUICommonWindows.SpellPressed)
-			Button.OnShiftPress (GUICommonWindows.SpellShiftPressed)
+			Button.OnPress (ActionsWindow.SpellPressed)
+			Button.OnRightPress (ActionsWindow.SpellRightPressed)
+			Button.OnShiftPress (ActionsWindow.SpellShiftPressed)
 
 		if Spell['SpellResRef']:
 			Button.SetSprites ("guibtbut", 0, 0,1,2,3)
@@ -309,7 +330,7 @@ def SetupSpellIcons(Window, BookType, Start=0, Offset=0):
 	# scroll right button
 	if More:
 		Button = Window.GetControl (Offset+buttonCount+1)
-		GUICommonWindows.SetActionIconWorkaround (Button, ACT_RIGHT, buttonCount)
+		ActionsWindow.SetActionIconWorkaround (Button, ACT_RIGHT, buttonCount)
 		Button.SetText ("")
 		if len(memorizedSpells) - Start > 10:
 			Button.SetState (IE_GUI_BUTTON_UNPRESSED)
@@ -346,8 +367,8 @@ def GetIWD2Spells (kit, usability, level, baseClass = -1):
 		if badSchools == -1:
 			badSchools = 0
 	else:
-		# only wizards have alignment and school restrictions
-		kit = usability = 0
+		# only wizards care about spell schools
+		kit = 0
 
 	spellsTable = GemRB.LoadTable ("listspll")
 	spellCount = spellsTable.GetRowCount ()
@@ -457,7 +478,7 @@ def GetLearnablePriestSpells (Class, Alignment, Level, booktype=0):
 		rowName = CommonTables.ClassSkills.GetRowName (row)
 		Class = CommonTables.Classes.GetValue (rowName, "ID", GTV_INT)
 		spells = GetIWD2Spells (0, Usability, Level, Class)
-		spells = [e[0] for e in spells] # ignore the second member
+		spells = [e[0] for e in filter(lambda s: s[1], spells)] # skip disallowed spells
 		return spells
 
 	SpellsTable = GemRB.LoadTable ("spells")
@@ -499,7 +520,7 @@ def SetupSpellLevels (pc, TableName, Type, Level):
 		# specialist mages get an extra spell if they already know that level
 		# FIXME: get a general routine to find specialists
 		school = GemRB.GetVar("MAGESCHOOL")
-		if (Type == IE_SPELL_TYPE_WIZARD and school != 0) or \
+		if (Type == IE_SPELL_TYPE_WIZARD and school is not None) or \
 			(GameCheck.IsIWD2() and Type == IE_IWD2_SPELL_WIZARD and not (kit&0x4000)):
 			if value > 0:
 				value += 1
@@ -544,12 +565,10 @@ def HasSorcererBook (pc, cls=-1):
 		ClassName = GUICommon.GetClassRowName (cls, "class")
 	SorcererBook = CommonTables.ClassSkills.GetValue (ClassName, "BOOKTYPE")
 	if SorcererBook == "*" or ClassName == "":
-		return False
-	return IsSorcererBook (SorcererBook)
+		return 0
+	return SorcererBook if IsSorcererBook (SorcererBook) else 0
 
-def CannotLearnSlotSpell (si = None):
-	pc = GemRB.GameGetSelectedPCSingle ()
-
+def CannotLearnSlotSpell (slot_item, pc):
 	# disqualify sorcerers immediately
 	if HasSorcererBook (pc):
 		return LSR_STAT
@@ -558,7 +577,6 @@ def CannotLearnSlotSpell (si = None):
 	if GameCheck.IsIWD2():
 		booktype = IE_IWD2_SPELL_WIZARD
 
-	slot_item = si if si else GemRB.GetSlotItem (pc, GemRB.GetVar ("ItemButton"))
 	spell_ref = GemRB.GetItem (slot_item['ItemResRef'])['Spell']
 	spell = GemRB.GetSpell (spell_ref)
 	level = spell['SpellLevel']
@@ -585,11 +603,11 @@ def CannotLearnSlotSpell (si = None):
 def LearnPriestSpell (pc, spell, bookType, level):
 	if GameCheck.IsIWD2():
 		if bookType == IE_IWD2_SPELL_DOMAIN:
-			GemRB.LearnSpell (pc, spell, 0, 1 << bookType, level)
+			GemRB.LearnSpell (pc, spell, 0, bookType, level)
 		else:
 			# perhaps forcing would be fine here too, but it's untested and
 			# iwd2 cleric schools grant certain spells at different levels
-			GemRB.LearnSpell (pc, spell, 0, 1 << bookType)
+			GemRB.LearnSpell (pc, spell, 0, bookType)
 	else:
 		GemRB.LearnSpell (pc, spell)
 
@@ -725,9 +743,16 @@ def LearnFromScroll (pc, slot):
 	slot_item = GemRB.GetSlotItem (pc, slot)
 	spell_ref = GemRB.GetItem (slot_item['ItemResRef'])['Spell']
 
-	ret = GemRB.LearnSpell (pc, spell_ref, LS_STATS|LS_ADDXP)
+	bookType = -1
+	if GameCheck.IsIWD2 () and GemRB.GetPlayerStat (pc, IE_LEVELMAGE):
+		bookType = IE_IWD2_SPELL_WIZARD
+	ret = GemRB.LearnSpell (pc, spell_ref, LS_STATS | LS_ADDXP, bookType)
 
 	# destroy the scroll, just one in case of a stack
 	GemRB.RemoveItem (pc, slot, 1)
+
+	# bg2 tutorial needs this
+	if slot_item["ItemResRef"] == "ttscrl01":
+		GemRB.SetGlobal ("TutorialLesson", "GLOBAL", 20)
 
 	return ret

@@ -20,15 +20,11 @@
 #define ACMREADER_H
 
 #include "SoundMgr.h"
-
 #include "decoder.h"
-#include "general.h"
 #include "unpacker.h"
 
 #include "Streams/DataStream.h"
 
-#include <cstdio>
-#include <cstring>
 #include <cstdlib>
 
 namespace GemRB {
@@ -47,6 +43,7 @@ private:
 	CSubbandDecoder* decoder = nullptr; // IP's subband decoder
 
 	int make_new_samples();
+
 public:
 	ACMReader() noexcept = default;
 	ACMReader(const ACMReader&) = delete;
@@ -69,7 +66,8 @@ public:
 	}
 
 	bool Import(DataStream* stream) override;
-	int read_samples(short* buffer, int count) override;
+	size_t read_samples(short* buffer, size_t count) override;
+	size_t ReadSamplesIntoChannels(char* channel1, char* channel2, size_t numSamples) override;
 };
 
 }

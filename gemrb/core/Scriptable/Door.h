@@ -21,33 +21,32 @@
 #ifndef DOOR_H
 #define DOOR_H
 
-#include "PathFinder.h"
 #include "Polygon.h"
 #include "TileOverlay.h"
 
 #include "GUI/GameControlDefs.h"
-#include "Scriptable/Scriptable.h"
+#include "Scriptable/Highlightable.h"
 
 namespace GemRB {
 
 // door flags; iwd2 differences are remapped in the importer
-#define DOOR_OPEN        1
-#define DOOR_LOCKED      2
-#define DOOR_RESET       4   //reset trap
-#define DOOR_DETECTABLE  8   //trap detectable
-#define DOOR_BROKEN      16  //door is broken (force opened)
-#define DOOR_CANTCLOSE   32  // used in BG1 (at least TotSC). Prevents random closing of doors in CGameDoor::CompressTime. (The random closing is only done when more than a hour of ingame time passed.) 
-#define DOOR_LINKED      64   // info trigger linked to this door (see LinkedInfo, INFO_DOOR), iwd2: DETECTED (used, but no code)
-#define DOOR_SECRET      128  //door is secret
-#define DOOR_FOUND       256  //secret door found
-#define DOOR_TRANSPARENT 512  //obscures vision (LOCKEDINFOTEXT in iwd2)
-#define DOOR_KEY         1024 //key removed when used (SEETHROUGH in iwd2)
-#define DOOR_SLIDE       2048 //impeded blocks ignored (WARNINGINFOTEXT in iwd2)
+#define DOOR_OPEN                 1
+#define DOOR_LOCKED               2
+#define DOOR_RESET                4 //reset trap
+#define DOOR_DETECTABLE           8 //trap detectable
+#define DOOR_BROKEN               16 //door is broken (force opened)
+#define DOOR_CANTCLOSE            32 // used in BG1 (at least TotSC). Prevents random closing of doors in CGameDoor::CompressTime. (The random closing is only done when more than a hour of ingame time passed.)
+#define DOOR_LINKED               64 // info trigger linked to this door (see LinkedInfo, INFO_DOOR), iwd2: DETECTED (used, but no code)
+#define DOOR_SECRET               128 //door is secret
+#define DOOR_FOUND                256 //secret door found
+#define DOOR_TRANSPARENT          512 //obscures vision (LOCKEDINFOTEXT in iwd2)
+#define DOOR_KEY                  1024 //key removed when used (SEETHROUGH in iwd2)
+#define DOOR_SLIDE                2048 //impeded blocks ignored (WARNINGINFOTEXT in iwd2)
 #define DOOR_WARNINGTEXTDISPLAYED 0x1000 // iwd2 after DOOR_WARNINGINFOTEXT's warning was shown; cleared when closing the door
-#define DOOR_HIDDEN      8192 // iwd2, ignore the door
-#define DOOR_USEUPKEY    0x4000 // iwd2, treating as identical to DOOR_KEY
-#define DOOR_LOCKEDINFOTEXT 0x8000 // iwd2, use custom text instead of default "Locked"
-#define DOOR_WARNINGINFOTEXT 0x10000 // iwd2, display warning when trying to open a door, unused in game
+#define DOOR_HIDDEN               8192 // iwd2, ignore the door
+#define DOOR_USEUPKEY             0x4000 // iwd2, treating as identical to DOOR_KEY
+#define DOOR_LOCKEDINFOTEXT       0x8000 // iwd2, use custom text instead of default "Locked"
+#define DOOR_WARNINGINFOTEXT      0x10000 // iwd2, display warning when trying to open a door, unused in game
 
 class GEM_EXPORT DoorTrigger {
 	WallPolygonGroup openWalls;
@@ -60,9 +59,9 @@ class GEM_EXPORT DoorTrigger {
 
 public:
 	DoorTrigger(std::shared_ptr<Gem_Polygon> openTrigger, WallPolygonGroup&& openWall,
-				std::shared_ptr<Gem_Polygon> closedTrigger, WallPolygonGroup&& closedWall);
+		    std::shared_ptr<Gem_Polygon> closedTrigger, WallPolygonGroup&& closedWall);
 
-	void SetState(bool open);
+	void SetState(bool open, Map* map);
 
 	std::shared_ptr<Gem_Polygon> StatePolygon() const;
 	std::shared_ptr<Gem_Polygon> StatePolygon(bool open) const;
@@ -71,6 +70,7 @@ public:
 class GEM_EXPORT Door : public Highlightable {
 public:
 	Door(Holder<TileOverlay> Overlay, DoorTrigger&& trigger);
+
 public:
 	ieVariable LinkedInfo;
 	ResRef ID; //WED ID
@@ -83,8 +83,8 @@ public:
 	Region& OpenBBox = BBox; // an alias for the base class BBox
 	Region ClosedBBox;
 	//impeded blocks
-	std::vector<Point> open_ib; //impeded blocks stored in a Point array
-	std::vector<Point> closed_ib;
+	std::vector<SearchmapPoint> open_ib; // impeded blocks stored in a Point array
+	std::vector<SearchmapPoint> closed_ib;
 
 	Point toOpen[2];
 	ResRef OpenSound;
@@ -98,13 +98,15 @@ public:
 	// unused, but learned from IE DEV info
 	ieWord hp = 0;
 	ieWord ac = 0;
+
 private:
-	void ImpedeBlocks(const std::vector<Point> &points, PathMapFlags value) const;
+	void ImpedeBlocks(const std::vector<SearchmapPoint>& points, PathMapFlags value) const;
 	bool BlockedOpen(int Open, int ForceOpen) const;
+
 public:
 	void UpdateDoor();
 	void ToggleTiles(int State, int playsound = false);
-	void SetName(const ResRef &Name); // sets door ID
+	void SetName(const ResRef& Name); // sets door ID
 	void SetTiles(std::vector<ieWord>);
 	bool CanDetectTrap() const override;
 	void SetDoorLocked(int Locked, int playsound);
@@ -113,7 +115,7 @@ public:
 	bool HitTest(const Point& p) const;
 	void TryPickLock(Actor* actor) override;
 	void TryBashLock(Actor* actor) override;
-	bool TryUnlock(Actor *actor) const;
+	bool TryUnlock(Actor* actor) const;
 	void TryDetectSecret(int skill, ieDword actorID);
 	bool Visible() const;
 	int GetCursor(TargetMode targetMode, int lastCursor) const;
@@ -122,7 +124,7 @@ public:
 	int TrapResets() const override { return Flags & DOOR_RESET; }
 	bool CantAutoClose() const { return Flags & (DOOR_CANTCLOSE | DOOR_LOCKED); }
 	void SetNewOverlay(Holder<TileOverlay> Overlay);
-	const Point* GetClosestApproach(Scriptable* src, unsigned int& distance) const;
+	const Point* GetClosestApproach(const Scriptable* src, unsigned int& distance) const;
 
 	std::shared_ptr<Gem_Polygon> OpenTriggerArea() const;
 	std::shared_ptr<Gem_Polygon> ClosedTriggerArea() const;

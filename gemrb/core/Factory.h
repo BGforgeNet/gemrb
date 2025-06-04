@@ -22,9 +22,7 @@
 #define FACTORY_H
 
 #include "exports.h"
-#include "globals.h"
 
-#include "AnimationFactory.h"
 #include "FactoryObject.h"
 
 #include <memory>
@@ -42,6 +40,7 @@ public:
 	void AddFactoryObject(object_t fobject);
 	int IsLoaded(const ResRef& resRef, SClass_ID type) const;
 	object_t GetFactoryObject(int pos) const;
+
 private:
 	std::vector<object_t> fobjects;
 };

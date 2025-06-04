@@ -1,14 +1,32 @@
-GemRB git (189996):
+GemRB git (09901b7):
   New features:
     - 
-    - iwd2 turn undead
-    - option to highlight learnable scrolls
+    - partial audio system rewrite for better (spatial) audio and music
+    - iwd2: customizable action bar, weapon set switching, item usability info
+    - detect illusions, spell info on right-click, various hardcoded pst bonuses
+    - smooth keyboard scrolling
+    - GUI enhancements are now configurable from within the game
 
   Improved features:
     - 
-    - text encoding
-    - feats
-    - scripting, projectiles, effects, movement speed
+    - video players, animations
+    - iwd2 weapon sets, pst GUI, pst level up
+    - scripting, effects
+    - bugfixes
+
+GemRB v0.9.4 (2025-01-11):
+  New features:
+    - iwd2 is now fully completable!
+    - iwd2 turn undead, hybrid damage types, Heal Party on Rest
+    - traditional bg2ee GUI is usable and the shaman class works
+    - option to highlight learnable scrolls, draw empty containers gray
+    - option to more easily use GemRB as a library
+    - animfps.2da to set per-animation drawing speed
+
+  Improved features:
+    - text encoding, drawing speed, drawing, (stereo) audio, GUI internals
+    - feats, animations
+    - scripting, projectiles, effects, movement speed, pathfinding
     - bugfixes
 
 GemRB v0.9.3 (2024-07-10):

@@ -45,6 +45,7 @@ IE_GUI_BUTTON_SOUND      = 0x00000004
 IE_GUI_BUTTON_CAPS       = 0x00000008   #capitalize all the text
 IE_GUI_BUTTON_CHECKBOX   = 0x00000010   #or radio button
 IE_GUI_BUTTON_RADIOBUTTON= 0x00000020   #sticks in a state
+IE_GUI_BUTTON_SHADE_BASE = 0x00000040
 
 #these bits are hardcoded in the .chu structure, don't move them
 IE_GUI_BUTTON_ALIGN_LEFT = 0x00000100
@@ -56,17 +57,10 @@ IE_GUI_BUTTON_LOWERCASE    = 0x00002000
 #IE_GUI_BUTTON_MULTILINE    = 0x00004000 # don't set the SINGLE_LINE font rendering flag
 #end of hardcoded section
 
-IE_GUI_BUTTON_NO_TEXT    = 0x00010000   # don't draw button label
-IE_GUI_BUTTON_PLAYRANDOM = 0x00020000   # the button animation is random
-IE_GUI_BUTTON_PLAYONCE   = 0x00040000   # the button animation won't restart
-IE_GUI_BUTTON_PLAYALWAYS = 0x00080000   # animation will play when game is paused
-
 IE_GUI_BUTTON_CENTER_PICTURES = 0x00100000 # center the button's PictureList
 IE_GUI_BUTTON_BG1_PAPERDOLL   = 0x00200000 # BG1-style paperdoll
 IE_GUI_BUTTON_HORIZONTAL      = 0x00400000 # horizontal clipping of overlay
 IE_GUI_BUTTON_NO_TOOLTIP      = 0x00800000 # disable the tooltip
-
-IE_GUI_BUTTON_PORTRAIT    = IE_GUI_BUTTON_PLAYONCE|IE_GUI_BUTTON_PLAYALWAYS|IE_GUI_BUTTON_PICTURE
 
 #label flags
 IE_GUI_LABEL_USE_COLOR = 1
@@ -90,6 +84,7 @@ TA_COLOR_SELECTED = 5
 ColorWhite = {'r': 255, 'g': 255, 'b': 255, 'a': 255}
 ColorWhitish = {'r': 215, 'g': 215, 'b': 215, 'a': 255}
 ColorRed = {'r': 255, 'g': 0, 'b': 0, 'a': 255}
+ColorBlack = {'r': 0, 'g': 0, 'b': 0, 'a': 255}
 ColorBlackish = {'r': 33, 'g': 44, 'b': 44, 'a': 205}
 ColorGray = {'r': 126, 'g': 126, 'b': 126, 'a': 255}
 
@@ -178,10 +173,12 @@ ACTION_WINDOW_FOCUS_GAINED	= 1
 ACTION_WINDOW_FOCUS_LOST	= 2
 
 # animation flags
-ANIM_PLAY_NORMAL		= 0,
-ANIM_PLAY_RANDOM		= 1, # the button animation is random
-ANIM_PLAY_ONCE			= 2, # the button animation won't restart
-ANIM_PLAY_ALWAYS		= 4  # animation will play when game is paused
+A_ANI_ACTIVE         = 1        # if not set, animation is invisible
+A_ANI_BLEND          = 2        # blend
+A_ANI_GAMEANIM       = 4        # stops when game is paused
+A_ANI_PLAYONCE       = 8        # stop after endframe
+A_ANI_SYNC           = 16       # synchronised draw (skip frames if needed)
+A_ANI_RANDOM_START   = 32       # starts with a random frame in the start range
 
 # GameScreen flags
 GS_PARTYAI           = 1
@@ -193,7 +190,6 @@ GS_DIALOG            = 8
 GS_HIDEGUI           = 16
 GS_OPTIONPANE        = 32
 GS_PORTRAITPANE      = 64
-GS_MAPNOTE           = 128
 
 # GameControl screen flags
 # !!! Keep these synchronized with GameControl.h !!!
@@ -201,7 +197,7 @@ SF_CENTERONACTOR     = 0
 SF_ALWAYSCENTER      = 1
 
 # GameControltarget modes
-# !!! Keep these synchronized with GameControl.h !!!
+# !!! Keep these synchronized with GameControlDefs.h !!!
 TARGET_MODE_NONE    = 0
 TARGET_MODE_TALK    = 1
 TARGET_MODE_ATTACK  = 2
@@ -312,14 +308,11 @@ SHOP_BUY    = 1
 SHOP_SELL   = 2
 SHOP_ID     = 4
 SHOP_STEAL  = 8
-SHOP_SELECT = 0x40
-SHOP_NOREPADJ = 0x2000 # IE_STORE_NOREPADJ
-SHOP_FULL   = 0x10000 # IE_STORE_CAPACITY
+SHOP_NOREPADJ = 0x2000 # StoreActionFlags::NOREPADJ
+SHOP_FULL   = 0x10000 # StoreActionFlags::CAPACITY
+SHOP_SELECT = 0x20000
 
 #game constants
-
-# !!! Keep this synchronized with Video.h !!!
-TOOLTIP_DELAY_FACTOR = 250
 
 #game strings
 STR_LOADMOS  = 0
@@ -335,11 +328,12 @@ SV_TOUCH = 4
 SV_SAVEPATH = 5
 
 # GUIEnhancements bits
-GE_SCROLLBARS = 1
+GE_CONTAINERS = 1
 GE_TRY_IDENTIFY_ON_TRANSFER = 2
 GE_ALWAYS_OPEN_CONTAINER_ITEMS = 4
 GE_UNFOCUS_STOPS_SCROLLING = 8
 GE_MARK_SCROLLS = 16
+GE_PERSISTENT_IDENTIFICATION = 32
 
 # Log Levels
 # !!! Keep this synchronized with Logging/Logging.h !!!
@@ -373,6 +367,9 @@ UAW_BOOK = 10
 UAW_2DASPELLS = 11
 UAW_SPELLS_DIRECT = 12
 UAW_QITEMS = 13
+UAW_BG2SUMMONS = 14
+UAW_WEAPONSETS = 15
+UAW_CONFIGUREBAR = 16
 
 # item extended header location field
 ITEM_LOC_WEAPON = 1  # show on quick weapon ability selection

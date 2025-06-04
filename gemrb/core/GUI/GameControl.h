@@ -30,19 +30,23 @@
 #include "exports.h"
 #include "strrefs.h"
 
-#include "Dialog.h"
-#include "Map.h"
+#include "EnumIndex.h"
+#include "Sprite2D.h"
+#include "View.h"
 
-#include "GUI/Control.h"
+#include "GUI/EventMgr.h"
 #include "GUI/GameControlDefs.h"
 
 #include <vector>
 
 namespace GemRB {
 
-class GameControl;
-class Window;
+class Container;
 class DialogHandler;
+class Door;
+class InfoPoint;
+class Map;
+class Movable;
 
 /**
  * @class GameControl
@@ -56,7 +60,7 @@ class GEM_EXPORT GameControl : public View {
 private:
 	ieDword lastActorID = 0;
 	ieDword trackerID = 0;
-	ieDword distance = 0;  //tracking distance
+	ieDword distance = 0; //tracking distance
 	std::vector<Actor*> highlighted;
 
 	bool isSelectionRect = false;
@@ -75,13 +79,14 @@ private:
 	int lastCursor = 0;
 	Point vpVector;
 	int numScrollCursor = 0;
-	PathListNode* drawPath = nullptr;
 	EnumBitset<ScreenFlags> screenFlags { ScreenFlags::CenterOnActor };
+	unsigned int scrollKeysActive = 0;
+	unsigned int scrollKeysDown = 0;
 	unsigned int DialogueFlags = DF_FREEZE_SCRIPTS;
 	String DisplayText;
 	unsigned int DisplayTextTime = 0;
 	bool AlwaysRun = false;
-	Actor *user = nullptr; //the user of item or spell
+	Actor* user = nullptr; //the user of item or spell
 
 	Scriptable* overMe = nullptr;
 
@@ -91,18 +96,16 @@ public:
 	static uint32_t DebugFlags;
 	static uint8_t DebugPropVal;
 
-	DialogHandler *dialoghandler = nullptr;
+	DialogHandler* dialoghandler = nullptr;
 	//the name of the spell to cast
 	ResRef spellName;
 	//using spell or item
 	int spellOrItem = 0; // -1 = item, otherwise the spell type
-	//the user of spell or item
-	Actor *spellUser = nullptr;
 	int spellSlot = 0; // or inventorySlot/itemHeader
 	int spellIndex = 0;
 	int spellCount = 0; //multiple targeting
 	// allow targeting allies, enemies and/or neutrals (bitmask)
-	int target_types = 0;
+	int targetTypes = 0;
 
 private:
 	using FormationPoints = std::vector<Point>;
@@ -112,14 +115,15 @@ private:
 	/** Draws an arrow on the edge of the screen based on the point (points at offscreen actors) */
 	void DrawArrowMarker(const Point& p, const Color& color) const;
 	void DrawFormation(const std::vector<Actor*>& actors, const Point& formationPoint, float_t angle) const;
-	
+
 	Point GetFormationPoint(const Point& origin, size_t pos, float_t angle, const FormationPoints& exclude = FormationPoints()) const;
 	FormationPoints GetFormationPoints(const Point& origin, const std::vector<Actor*>& actors, float_t angle) const;
-	
+
+	void ApplyKeyScrolling();
 	void Scroll(const Point& amt);
 
-	void HandleContainer(Container *container, Actor *actor);
-	void HandleDoor(Door *door, Actor *actor);
+	void HandleContainer(Container* container, Actor* actor);
+	void HandleDoor(Door* door, Actor* actor);
 
 	void UpdateCursor();
 	bool IsDisabledCursor() const override;
@@ -139,10 +143,11 @@ private:
 
 	bool CanLockFocus() const override { return true; };
 	void FlagsChanged(unsigned int /*oldflags*/) override;
-	
+
 	void DebugPaint(const Point& p, bool sample) const noexcept;
 
-	enum class ActorDump {Anims, Stats};
+	enum class ActorDump { Anims,
+			       Stats };
 	void DumpActorInfo(ActorDump, const Map*) const noexcept;
 
 public:
@@ -151,12 +156,13 @@ public:
 
 	// GameControl always needs to redraw unless we arent in a game (disabled)
 	bool IsAnimated() const override { return !IsDisabled(); }
-	void DrawTargetReticle(uint16_t size, const Color& color, const Point& p) const;
+	void DrawTargetReticles() const;
+	void DrawTargetReticle(uint16_t size, const Color& color, const Point& p, int offset = 0) const;
 	/** Draws the target reticle for Actor movement. */
-	void DrawTargetReticle(const Movable* target, const Point& point) const;
+	void DrawTargetReticle(const Movable* target, const Point& point, int offset = 0) const;
 	/** Sets multiple quicksaves flag*/
 	//static void MultipleQuickSaves(int arg);
-	void SetTracker(const Actor *actor, ieDword dist);
+	void SetTracker(const Actor* actor, ieDword dist);
 
 	void DrawTooltip(const Point& p) const;
 	String TooltipText() const override;
@@ -180,44 +186,45 @@ public:
 	/** Selects one or all PC */
 	void SelectActor(int whom, int type = -1);
 	void SetCutSceneMode(bool active);
-	void TryToAttack(Actor *source, const Actor *target) const;
-	void TryToCast(Actor *source, const Point &p);
-	void TryToCast(Actor *source, const Actor *target);
-	void TryToDefend(Actor *source, const Actor *target) const;
-	void TryToTalk(Actor *source, const Actor *target) const;
-	void TryToPick(Actor *source, const Scriptable *tgt) const;
-	void TryToDisarm(Actor *source, const InfoPoint *tgt) const;
-	void PerformActionOn(Actor *actor);
+	void TryToAttack(Actor* source, const Actor* target) const;
+	void TryToCast(Actor* source, const Point& p);
+	void TryToCast(Actor* source, const Actor* target);
+	void TryToDefend(Actor* source, const Actor* target) const;
+	void TryToTalk(Actor* source, const Actor* target) const;
+	void TryToPick(Actor* source, const Scriptable* tgt) const;
+	void TryToDisarm(Actor* source, const InfoPoint* tgt) const;
+	void PerformActionOn(Actor* actor);
 	void ResetTargetMode();
 	void UpdateTargetMode();
 
-	// returns the default cursor fitting the targeting mode
-	Holder<Sprite2D> GetTargetActionCursor() const;
 	Holder<Sprite2D> Cursor() const override;
 
-	bool HandleActiveRegion(InfoPoint *trap, Actor *actor, const Point& p);
+	bool HandleActiveRegion(InfoPoint* trap, Actor* actor, const Point& p);
 
 	void MakeSelection(bool extend = false);
 	void InitFormation(const Point&, bool rotating);
 	Point GetFormationOffset(size_t formation, uint8_t pos) const;
 	/** calls MoveToPoint or RunToPoint */
-	void CreateMovement(Actor *actor, const Point &p, bool append = true, bool tryToRun = false) const;
-	bool ShouldTriggerWorldMap(const Actor *pc) const;
+	void CreateMovement(Actor* actor, const Point& p, bool append = true, bool tryToRun = false) const;
+	bool ShouldTriggerWorldMap(const Actor* pc) const;
 	/** checks if the actor should be running instead of walking */
-	bool CanRun(const Actor *actor) const;
-	bool ShouldRun(const Actor *actor) const;
+	bool CanRun(const Actor* actor) const;
+	bool ShouldRun(const Actor* actor) const;
 	/** Displays a string over an object */
 	void DisplayString(Scriptable* target) const;
 	/** Displays a string on screen */
-	void DisplayString(const Point &p, const char *Text);
-	Actor *GetLastActor() const;
+	void DisplayString(const Point& p, const char* Text);
+	Actor* GetLastActor() const;
 	void SetLastActor(Actor* lastActor);
+	bool IsOverLastActor(const Point& pos) const;
+	/** Gets the Scriptable currently under the cursor */
+	Scriptable* GetHoverObject() const;
 	/** changes map to the current PC */
-	void ChangeMap(const Actor *pc, bool forced);
+	void ChangeMap(const Actor* pc, bool forced);
 	/** Sets up targeting with spells or items */
-	void SetupItemUse(int slot, size_t header, Actor *actor, int targettype, int cnt);
+	void SetupItemUse(int slot, size_t header, int targettype, int cnt);
 	/** Page is the spell type + spell level info */
-	void SetupCasting(const ResRef& spellname, int type, int level, int slot, Actor *actor, int targettype, int cnt);
+	void SetupCasting(const ResRef& spellname, int type, int level, int slot, int targettype, int cnt);
 	void ToggleAlwaysRun();
 	int GetOverheadOffset() const;
 	void TryDefaultTalk() const;
@@ -238,14 +245,17 @@ protected:
 
 	/** Currently only deals with the GEM_TAB exception */
 	bool DispatchEvent(const Event& event) const;
-	
+
 	/** Mouse Button Down */
 	bool OnMouseDown(const MouseEvent& /*me*/, unsigned short Mod) override;
 	/** Mouse Button Up */
 	bool OnMouseUp(const MouseEvent& /*me*/, unsigned short Mod) override;
 	bool OnMouseWheelScroll(const Point& delta) override;
-	
+
 	bool OnControllerButtonDown(const ControllerEvent& ce) override;
+
+	// returns the default cursor fitting the targeting mode
+	static Holder<Sprite2D> GetTargetActionCursor(TargetMode mode);
 };
 
 }

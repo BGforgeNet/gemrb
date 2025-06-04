@@ -90,7 +90,7 @@ def OnLoad ():
 	StartWindow.Focus ()
 	GemRB.LoadMusicPL("Theme.mus",1)
 	
-	StartWindow.SetAction(RefreshProtocol, ACTION_WINDOW_FOCUS_GAINED)
+	StartWindow.OnFocus (RefreshProtocol)
 	
 	return
 
@@ -202,7 +202,7 @@ def GameTypeDonePress(win):
 		win.Close()
 		GameTypeReallyDonePress()
 	elif ExpansionGame == 1: #show a warning message first
-		GameType2Window = GemRB.LoadWindow (25)
+		GameType2Window = GemRB.LoadWindow (25, "GUICONN")
 
 		TextArea = GameType2Window.GetControl(0)
 		TextArea.SetText(26318)

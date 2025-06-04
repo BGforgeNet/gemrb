@@ -22,17 +22,18 @@
 #define GemRB_BAMFontManager_h
 
 #include "FontManager.h"
-#include "BAMImporter.h"
 
 namespace GemRB {
 
-class BAMFontManager : public FontManager
-{
+class BAMImporter;
+
+class BAMFontManager : public FontManager {
 private:
 	/** private data members */
 	BAMImporter* bamImp;
 	bool isStateFont = false;
 	ResRef resRef;
+
 public:
 	/** public methods */
 	BAMFontManager(const BAMFontManager&) = delete;

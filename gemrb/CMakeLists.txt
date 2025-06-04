@@ -1,3 +1,6 @@
+IF(USE_TRACY)
+  ADD_SUBDIRECTORY(plugins/Tracy)
+ENDIF()
 ADD_SUBDIRECTORY( core )
 
 # GUIScripts and override go directly in the bundle
@@ -156,8 +159,11 @@ ENDIF(APPLE)
 CONFIGURE_FILE(
   "${CMAKE_CURRENT_SOURCE_DIR}/GemRB.cfg.sample.in"
   "${CMAKE_CURRENT_BINARY_DIR}/GemRB.cfg.sample"
-  IMMEDIATE @ONLY
+  @ONLY
 )
+
+# copy config for complex tests to build dir
+CONFIGURE_FILE(../demo/tester.cfg "${CMAKE_BINARY_DIR}")
 
 INSTALL( TARGETS gemrb DESTINATION ${BIN_DIR} )
 
@@ -173,7 +179,10 @@ ENDIF(VITA)
 # Tests
 IF (BUILD_TESTING)
   ADD_EXECUTABLE(Test_gemrb_core
+    tests/core/Test_Map.cpp
+    tests/core/Test_MurmurHash.cpp
     tests/core/Test_Orient.cpp
+    tests/core/Test_Palette.cpp
     tests/core/Streams/Test_DataStream.cpp
     tests/core/Strings/Test_CString.cpp
     tests/core/Strings/Test_String.cpp

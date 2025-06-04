@@ -22,7 +22,7 @@
 
 #include "Game.h"
 #include "Interface.h"
-#include "Scriptable.h"
+#include "Selectable.h"
 
 #include "GUI/GameControl.h"
 
@@ -44,12 +44,14 @@ void OverHeadText::SetText(String newText, bool display, bool append, const Colo
 	}
 
 	// always append for actors and areas ... unless it's the head hp ratio
+	bool spaceOut = false;
 	if (append && core->HasFeature(GFFlags::ONSCREEN_TEXT) && (owner->Type == ST_ACTOR || owner->Type == ST_AREA)) {
 		idx = messages.size();
 		messages.emplace_back();
 		if (owner->Type == ST_ACTOR) {
 			messages[idx].scrollOffset = Point(0, maxScrollOffset);
 		}
+		spaceOut = true;
 	} else {
 		messages[idx].scrollOffset.Invalidate();
 	}
@@ -57,6 +59,22 @@ void OverHeadText::SetText(String newText, bool display, bool append, const Colo
 	messages[idx].text = std::move(newText);
 	messages[idx].color = newColor;
 	Display(display, idx);
+
+	// ensure a minimum time gap to avoid overlap
+	if (spaceOut && messages.size() > 2) {
+		const OverHeadMsg& msg = messages[idx - 1];
+		size_t lines = Count(msg.text, '\n');
+		tick_t minGap = (150 + 30 * lines) * core->Time.ticksPerSec / core->Time.defaultTicksPerSec; // empirical
+		if (msg.timeStartDisplaying > messages[idx].timeStartDisplaying) {
+			// previous message was already bumped forward
+			messages[idx].timeStartDisplaying = msg.timeStartDisplaying + minGap;
+		} else {
+			tick_t delta = messages[idx].timeStartDisplaying - msg.timeStartDisplaying;
+			if (delta < minGap) {
+				messages[idx].timeStartDisplaying += minGap - delta;
+			}
+		}
+	}
 }
 
 bool OverHeadText::Display(bool show, size_t idx)
@@ -154,6 +172,9 @@ bool OverHeadMsg::Draw(int heightOffset, const Point& fallbackPos, int ownerType
 	}
 	Font::PrintColors fontColor = { textColor, ColorBlack };
 
+	if (time < timeStartDisplaying) {
+		return true; // too early, was rescheduled for the future
+	}
 	time -= timeStartDisplaying;
 	if (time >= delay) {
 		timeStartDisplaying = 0;
@@ -174,6 +195,22 @@ bool OverHeadMsg::Draw(int heightOffset, const Point& fallbackPos, int ownerType
 		rgn.y -= maxScrollOffset - scrollOffset.y;
 		// rgn.h will be adjusted automatically, we don't need to worry about accidentally hiding other msgs
 		scrollOffset.y -= 2;
+	}
+
+	if (core->HasFeature(GFFlags::RULES_3ED)) {
+		// first draw a background layer for better contrast
+		Region rgnBG(rgn);
+
+		// how big will be the laid out text?
+		// make it a Font::Print flag bit in the future?
+		Font::StringSizeMetrics metrics { rgnBG.size, 0, 0, true };
+		Size stringSize = core->GetTextFont()->StringSize(text, &metrics);
+		rgnBG.size = stringSize;
+		rgnBG.ExpandAllSides(3);
+		// recenter if we shrunk
+		rgnBG.x += (200 - rgnBG.w) / 2 + 3;
+		static constexpr Color TranslucentBlack { 0x00, 0x00, 0x00, 0x9f };
+		VideoDriver->DrawRect(rgnBG, TranslucentBlack, true, BlitFlags::BLENDED);
 	}
 	core->GetTextFont()->Print(rgn, text, IE_FONT_ALIGN_CENTER | IE_FONT_ALIGN_TOP, fontColor);
 

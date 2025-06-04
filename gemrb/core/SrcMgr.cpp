@@ -23,8 +23,8 @@
 #include "SrcMgr.h"
 
 #include "GameData.h"
+
 #include "Streams/DataStream.h"
-#include "Logging/Logging.h"
 
 namespace GemRB {
 

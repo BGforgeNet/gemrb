@@ -18,6 +18,7 @@
 #
 import GemRB
 import GUIOPT
+import GUIOPTExtra
 import GameCheck
 
 OptionsWindow = 0
@@ -27,12 +28,34 @@ def OnLoad():
 	OptionsWindow = GemRB.LoadWindow(13, "GUIOPT")
 	if GameCheck.HasTOB() and GemRB.GetVar("oldgame") == 1:
 		OptionsWindow.SetBackground("STARTOLD")
-	Label = OptionsWindow.CreateLabel(0x0fff0000, 0,450,640,30, "REALMS", "", IE_FONT_SINGLE_LINE | IE_FONT_ALIGN_CENTER)
+
+	y = 450
+	w = 640
+	if GameCheck.IsBG2EE ():
+		y = GemRB.GetSystemVariable (SV_HEIGHT) - 100
+		w = GemRB.GetSystemVariable (SV_WIDTH)
+	Label = OptionsWindow.CreateLabel(0x0fff0000, 0, y, w, 30, "REALMS", "", IE_FONT_SINGLE_LINE | IE_FONT_ALIGN_CENTER)
 	Label.SetText (GemRB.Version)
+
 	SoundButton = OptionsWindow.GetControl(8)
 	GameButton = OptionsWindow.GetControl(9)
 	GraphicButton = OptionsWindow.GetControl(7)
 	BackButton = OptionsWindow.GetControl(11)
+
+	if GameCheck.IsBG2EE ():
+		MoviesButton = OptionsWindow.GetControl (12)
+		MoviesButton.SetText (15415)
+		MoviesButton.OnPress (lambda: GemRB.SetNextScript ("GUIMOVIE"))
+
+		OptionsWindow.DeleteControl (15)
+
+		frame = SoundButton.GetFrame ()
+		GUIOPTExtra.AddGemRBOptionsButton (OptionsWindow, frame, 0, 80, "STARTMBT", 1)
+	elif GameCheck.IsBG2 ():
+		frame = SoundButton.GetFrame ()
+		frame["w"] -= 25
+		GUIOPTExtra.AddGemRBOptionsButton (OptionsWindow, frame, 0, 50, "GMPCONNC", 2)
+
 	SoundButton.SetStatus(IE_GUI_BUTTON_ENABLED)
 	GameButton.SetStatus(IE_GUI_BUTTON_ENABLED)
 	GraphicButton.SetStatus(IE_GUI_BUTTON_ENABLED)
@@ -40,7 +63,8 @@ def OnLoad():
 	SoundButton.SetText(17164)
 	GameButton.SetText(17165)
 	GraphicButton.SetText(17162)
-	BackButton.SetText(10308)
+	BackButton.SetText (12896)
+
 	SoundButton.OnPress (GUIOPT.OpenAudioOptionsWindow )
 	GameButton.OnPress (GUIOPT.OpenGameplayOptionsWindow)
 	GraphicButton.OnPress (GUIOPT.OpenVideoOptionsWindow)

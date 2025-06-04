@@ -21,7 +21,8 @@
 #include "MoviePlayer.h"
 
 #include "Interface.h"
-#include "GUI/Label.h"
+
+#include "GUI/Window.h"
 #include "GUI/WindowManager.h"
 
 #include <chrono>
@@ -66,7 +67,7 @@ void MoviePlayer::Play(Window* win)
 	// center over win
 	const Region& winFrame = win->Frame();
 	const Size& size = Dimensions();
-	Point center(winFrame.w/2 - size.w/2, winFrame.h/2 - size.h/2);
+	Point center(winFrame.w / 2 - size.w / 2, winFrame.h / 2 - size.h / 2);
 	center = center + winFrame.origin;
 	VideoBufferPtr subBuf = nullptr;
 	VideoBufferPtr vb = VideoDriver->CreateBuffer(Region(center, size), movieFormat);
@@ -85,19 +86,19 @@ void MoviePlayer::Play(Window* win)
 	isPlaying = true;
 	do {
 		// taking over the application runloop...
-		
+
 		// we could draw all the windows if we wanted to be able to have videos that aren't fullscreen
 		// However, since we completely block the normal game loop we will bypass WindowManager drawing
 		//WindowManager::DefaultWindowManager().DrawWindows();
-		
+
 		// first draw the window for play controls/subtitles
 		//win->Draw();
-		
+
 		VideoDriver->PushDrawingBuffer(vb);
 		if (DecodeFrame(*vb) == false) {
 			Stop(); // error / end
 		}
-		
+
 		if (subtitles && showSubtitles) {
 			assert(subBuf);
 			// we purposely draw on the window, which may be larger than the video
@@ -140,6 +141,21 @@ void MoviePlayer::timer_wait(microseconds frameWait)
 	std::this_thread::sleep_for(to_sleep);
 
 	timer_start();
+}
+
+bool MoviePlayerControls::OnKeyPress(const KeyboardEvent& Key, unsigned short /*Mod*/)
+{
+	KeyboardKey keycode = Key.keycode;
+	switch (keycode) {
+		case 's':
+			player.EnableSubtitles(!player.SubtitlesEnabled());
+			break;
+		default:
+			player.Stop();
+			break;
+	}
+
+	return true;
 }
 
 }

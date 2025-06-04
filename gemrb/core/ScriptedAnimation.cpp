@@ -24,15 +24,14 @@
 #include "ScriptedAnimation.h"
 
 #include "AnimationFactory.h"
-#include "Audio.h"
 #include "Game.h"
 #include "GameData.h"
 #include "Interface.h"
 #include "Light.h"
-#include "Logging/Logging.h"
-#include "Map.h"
-#include "Video/Pixels.h"
 #include "Sprite2D.h"
+
+#include "Logging/Logging.h"
+#include "Video/Pixels.h"
 
 namespace GemRB {
 
@@ -66,16 +65,7 @@ static const std::array<CycleType, 16> cTypes = {
 	CycleType::Three | CycleType::Five,
 };
 
-static const ieByte SixteenToNine[3*MAX_ORIENT]={
-	0, 1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1,
-	9,10,11,12,13,14,15,16,17,16,15,14,13,12,11,10,
-	18,19,20,21,22,23,24,25,26,25,24,23,22,21,20,19
-};
-static const ieByte SixteenToFive[3*MAX_ORIENT]={
-	0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 3, 3, 2, 2, 1, 1,
-	5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 8, 8, 7, 7, 6, 6,
-	10,10,11,11,12,12,13,13,14,14,13,13,12,12,11,11
-};
+static ieDword TranslucentShadows = 0;
 
 Animation* ScriptedAnimation::PrepareAnimation(const AnimationFactory& af, Animation::index_t cycle, Animation::index_t i, bool loop) const
 {
@@ -84,12 +74,12 @@ Animation* ScriptedAnimation::PrepareAnimation(const AnimationFactory& af, Anima
 	if (NumOrientations == 16 || OrientationFlags & IE_VVC_FACE_FIXED) {
 		if (af.GetCycleCount() > i) c = i;
 	} else if (NumOrientations == 5) {
-		c = SixteenToFive[i];
+		c = SixteenToFive[i % MAX_ORIENT] + 5 * i / MAX_ORIENT;
 	} else if (NumOrientations == 9) {
-		c = SixteenToNine[i];
+		c = SixteenToNine[i % MAX_ORIENT] + 9 * i / MAX_ORIENT;
 	}
 
-	Animation *anim = af.GetCycle(c);
+	Animation* anim = af.GetCycle(c);
 	if (anim) {
 		anim->MirrorAnimation(BlitFlags(Transparency) & (BlitFlags::MIRRORX | BlitFlags::MIRRORY));
 		//creature anims may start at random position, vvcs always start on 0
@@ -97,7 +87,7 @@ Animation* ScriptedAnimation::PrepareAnimation(const AnimationFactory& af, Anima
 		//vvcs are always paused
 		anim->gameAnimation = true;
 		if (!loop) {
-			anim->Flags |= S_ANI_PLAYONCE;
+			anim->flags |= S_ANI_PLAYONCE;
 		}
 		anim->fps = FrameRate;
 	}
@@ -122,16 +112,18 @@ void ScriptedAnimation::LoadAnimationFactory(const AnimationFactory& af, int get
 	}
 
 	CycleType type = cTypes[cCount];
-	switch(gettwin) {
-	case 2:
-		if (type == CycleType::Two) {
+	switch (gettwin) {
+		case 2:
+			if (type == CycleType::Two) {
+				type = CycleType::One | CycleType::Double;
+			}
+			gettwin = 0;
+			break;
+		case 1:
 			type = CycleType::One | CycleType::Double;
-		}
-		gettwin = 0;
-		break;
-	case 1:
-		type = CycleType::One | CycleType::Double;
-		break;
+			break;
+		default:
+			break;
 	}
 
 	if (type == CycleType::Illegal) {
@@ -163,10 +155,10 @@ void ScriptedAnimation::LoadAnimationFactory(const AnimationFactory& af, int get
 			assert(p < 3);
 			p *= MAX_ORIENT;
 		} else if (type & CycleType::Five) {
-			c = SixteenToFive[c];
+			c = SixteenToFive[c % MAX_ORIENT] + 5 * c / MAX_ORIENT;
 			if ((i & 15) >= 5) mirrorFlags = BlitFlags::MIRRORX;
 		} else if (type & CycleType::Nine) {
-			c = SixteenToNine[c];
+			c = SixteenToNine[c % MAX_ORIENT] + 9 * c / MAX_ORIENT;
 			if ((i & 15) >= 9) mirrorFlags = BlitFlags::MIRRORX;
 		} else if (!(type & CycleType::SevenEyes2)) {
 			assert(p < 3);
@@ -187,16 +179,16 @@ void ScriptedAnimation::LoadAnimationFactory(const AnimationFactory& af, int get
 		unsigned int p_release = P_RELEASE * MAX_ORIENT + o;
 		//if there is no hold anim, move the onset anim there
 		if (!anims[p_hold]) {
-			anims[p_hold]=anims[p_onset];
-			anims[p_onset]=NULL;
+			anims[p_hold] = anims[p_onset];
+			anims[p_onset] = nullptr;
 		}
 		//onset and release phases are to be played only once
 		if (anims[p_onset])
-			anims[p_onset]->Flags |= S_ANI_PLAYONCE;
+			anims[p_onset]->flags |= S_ANI_PLAYONCE;
 		if (anims[p_release])
-			anims[p_release]->Flags |= S_ANI_PLAYONCE;
+			anims[p_release]->flags |= S_ANI_PLAYONCE;
 	}
-	SequenceFlags = IE_VVC_BAM|IE_VVC_LOOP;
+	SequenceFlags = IE_VVC_BAM | IE_VVC_LOOP;
 
 	//we are getting a twin, no need of going further,
 	//if there is any more common initialisation, it should
@@ -220,39 +212,41 @@ ScriptedAnimation::ScriptedAnimation(DataStream* stream)
 
 	char Signature[8];
 
-	stream->Read( Signature, 8);
-	if (strncmp( Signature, "VVC V1.0", 8 ) != 0) {
+	stream->Read(Signature, 8);
+	if (strncmp(Signature, "VVC V1.0", 8) != 0) {
 		Log(ERROR, "ScriptedAnimation", "Not a valid VVC file!");
 		delete stream;
 		return;
 	}
 	ResRef Anim1ResRef;
-	stream->ReadResRef( Anim1ResRef );
+	stream->ReadResRef(Anim1ResRef);
 	// unused second resref; m_cShadowVidCellRef in the original
-	stream->Seek( 8, GEM_CURRENT_POS );
+	stream->Seek(8, GEM_CURRENT_POS);
 	stream->ReadDword(Transparency);
-	stream->Seek( 4, GEM_CURRENT_POS ); // unused in the original: m_bltInfo
+	stream->Seek(4, GEM_CURRENT_POS); // unused in the original: m_bltInfo
 	stream->ReadDword(SequenceFlags);
-	stream->Seek( 4, GEM_CURRENT_POS ); // unused in the original: m_bltInfoExtra
+	stream->Seek(4, GEM_CURRENT_POS); // unused in the original: m_bltInfoExtra
 
 	ieDword tmp;
 	stream->ReadDword(tmp);
 	XOffset = int(tmp);
-	stream->ReadDword(tmp);  //this affects visibility
+	stream->ReadDword(tmp); //this affects visibility
 	YOffset = int(tmp);
-	stream->Seek( 4, GEM_CURRENT_POS ); // (offset) position flags in the original, "use orientation" on IESDP
+	stream->Seek(4, GEM_CURRENT_POS); // (offset) position flags in the original, "use orientation" on IESDP
 	stream->ReadDword(FrameRate);
 
-	if (!FrameRate) FrameRate = ANI_DEFAULT_FRAMERATE;
-	else if (FrameRate > 30) FrameRate = 30;
+	if (!FrameRate)
+		FrameRate = ANI_DEFAULT_FRAMERATE;
+	else if (FrameRate > 30)
+		FrameRate = 30;
 
 	stream->ReadDword(NumOrientations);
 	stream->ReadDword(tmp);
 	Orientation = ClampToOrientation(tmp);
 	stream->ReadDword(OrientationFlags);
-	stream->Seek( 8, GEM_CURRENT_POS ); // CResRef m_cNewPaletteRef in the original
+	stream->Seek(8, GEM_CURRENT_POS); // CResRef m_cNewPaletteRef in the original
 
-	stream->ReadDword(tmp);  //this doesn't affect visibility
+	stream->ReadDword(tmp); //this doesn't affect visibility
 	ZOffset = int(tmp);
 
 	stream->ReadDword(LightX); // and Lighting effect radius / width / glow
@@ -260,7 +254,7 @@ ScriptedAnimation::ScriptedAnimation(DataStream* stream)
 	stream->ReadDword(LightZ); // glow intensity / brightness
 	stream->ReadDword(Duration);
 	// m_cVVCResRes in the original, supposedly a self-reference
-	stream->Seek( 8, GEM_CURRENT_POS );
+	stream->Seek(8, GEM_CURRENT_POS);
 
 	stream->ReadDword(tmp); // 1 indexed, m_nStartSequence
 	int seq1 = ((signed) tmp) - 1;
@@ -269,15 +263,15 @@ ScriptedAnimation::ScriptedAnimation(DataStream* stream)
 	// original
 	//   LONG    m_nCurrentSequence; //1 indexed
 	//   DWORD   m_sequenceFlags; // only bit0 for continuous playback known
-	stream->Seek( 8, GEM_CURRENT_POS );
-	stream->ReadResRef( sounds[P_ONSET] );
-	stream->ReadResRef( sounds[P_HOLD] );
+	stream->Seek(8, GEM_CURRENT_POS);
+	stream->ReadResRef(sounds[P_ONSET]);
+	stream->ReadResRef(sounds[P_HOLD]);
 
 	// original: CResRef   m_cAlphaBamRef;
-	stream->Seek( 8, GEM_CURRENT_POS );
+	stream->Seek(8, GEM_CURRENT_POS);
 	stream->ReadDword(tmp); // m_nEndSequence
 	int seq3 = ((signed) tmp) - 1;
-	stream->ReadResRef( sounds[P_RELEASE] );
+	stream->ReadResRef(sounds[P_RELEASE]);
 	// original bg2 has 4*84 of reserved space here
 
 	//if there are no separate phases, then fill the p_hold fields
@@ -322,13 +316,14 @@ ScriptedAnimation::ScriptedAnimation(DataStream* stream)
 	}
 
 	SetPhase(P_ONSET);
+	TranslucentShadows = core->GetDictionary().Get("Translucent Shadows", 0);
 
 	delete stream;
 }
 
 ScriptedAnimation::~ScriptedAnimation(void)
 {
-	for (Animation *anim : anims) {
+	for (Animation* anim : anims) {
 		delete anim;
 	}
 
@@ -352,7 +347,7 @@ void ScriptedAnimation::SetPhase(int arg)
 	}
 }
 
-void ScriptedAnimation::SetSound(int arg, const ResRef &sound)
+void ScriptedAnimation::SetSound(int arg, const ResRef& sound)
 {
 	if (arg >= P_ONSET && arg <= P_RELEASE) {
 		sounds[arg] = sound;
@@ -363,9 +358,9 @@ void ScriptedAnimation::SetSound(int arg, const ResRef &sound)
 void ScriptedAnimation::PlayOnce()
 {
 	SequenceFlags &= ~IE_VVC_LOOP;
-	for (Animation *anim : anims) {
+	for (Animation* anim : anims) {
 		if (anim) {
-			anim->Flags |= S_ANI_PLAYONCE;
+			anim->flags |= S_ANI_PLAYONCE;
 		}
 	}
 	if (twin) {
@@ -373,7 +368,7 @@ void ScriptedAnimation::PlayOnce()
 	}
 }
 
-void ScriptedAnimation::SetFullPalette(const ResRef &PaletteResRef)
+void ScriptedAnimation::SetFullPalette(const ResRef& PaletteResRef)
 {
 	palette = gamedata->GetPalette(PaletteResRef);
 	if (twin) {
@@ -396,13 +391,13 @@ void ScriptedAnimation::SetPalette(int gradient, int start)
 	if (!palette)
 		return;
 	//default start
-	if (start==-1) {
-		start=4;
+	if (start == -1) {
+		start = 4;
 	}
 
 	constexpr int PALSIZE = 12;
 	const auto& pal16 = core->GetPalette16(gradient);
-	palette->CopyColorRange(&pal16[0], &pal16[PALSIZE], start);
+	palette->CopyColors(start, &pal16[0], &pal16[PALSIZE]);
 
 	if (twin) {
 		twin->SetPalette(gradient, start);
@@ -411,7 +406,7 @@ void ScriptedAnimation::SetPalette(int gradient, int start)
 
 Animation::index_t ScriptedAnimation::GetCurrentFrame() const
 {
-	const Animation *anim = anims[P_HOLD * MAX_ORIENT];
+	const Animation* anim = anims[P_HOLD * MAX_ORIENT];
 	if (anim) {
 		return anim->GetCurrentFrameIndex();
 	}
@@ -421,9 +416,9 @@ Animation::index_t ScriptedAnimation::GetCurrentFrame() const
 ieDword ScriptedAnimation::GetSequenceDuration(ieDword multiplier) const
 {
 	//P_HOLD * MAX_ORIENT == MAX_ORIENT
-	const Animation *anim = anims[P_HOLD * MAX_ORIENT];
+	const Animation* anim = anims[P_HOLD * MAX_ORIENT];
 	if (anim) {
-		return anim->GetFrameCount()*multiplier/FrameRate;
+		return anim->GetFrameCount() * multiplier / FrameRate;
 	}
 	return 0;
 }
@@ -432,18 +427,18 @@ void ScriptedAnimation::SetDelay(ieDword delay)
 {
 	Delay = delay;
 	if (twin) {
-		twin->Delay=delay;
+		twin->Delay = delay;
 	}
 }
 
 void ScriptedAnimation::SetDefaultDuration(ieDword duration)
 {
-	if (!(SequenceFlags & (IE_VVC_LOOP|IE_VVC_FREEZE))) return;
-	if (Duration==0xffffffff) {
+	if (!(SequenceFlags & (IE_VVC_LOOP | IE_VVC_FREEZE))) return;
+	if (Duration == 0xffffffff) {
 		Duration = duration;
 	}
 	if (twin) {
-		twin->Duration=Duration;
+		twin->Duration = Duration;
 	}
 }
 
@@ -461,7 +456,7 @@ void ScriptedAnimation::SetOrientation(orient_t orientation)
 
 bool ScriptedAnimation::UpdatePhase()
 {
-	const Game *game = core->GetGame();
+	const Game* game = core->GetGame();
 
 	if (justCreated) {
 		if (Phase == P_NOTINITED) {
@@ -505,7 +500,7 @@ retry:
 		return true;
 	}
 
-	Animation *anim = anims[Phase * MAX_ORIENT + Orientation];
+	Animation* anim = anims[Phase * MAX_ORIENT + Orientation];
 	if (!anim) {
 		IncrementPhase();
 		goto retry;
@@ -514,7 +509,7 @@ retry:
 	if (game->IsTimestopActive()) {
 		return false;
 	}
-	
+
 	auto frame = anim->NextFrame();
 
 	//explicit duration
@@ -544,9 +539,9 @@ retry:
 
 void ScriptedAnimation::StopSound()
 {
-	if (sound_handle) {
-		sound_handle->Stop();
-		sound_handle.reset();
+	if (soundHandle) {
+		soundHandle->Stop();
+		soundHandle.reset();
 	}
 }
 
@@ -557,27 +552,29 @@ void ScriptedAnimation::UpdateSound()
 	}
 
 	Point soundpos(Pos.x + XOffset, Pos.y + YOffset);
-	if (!sound_handle || !sound_handle->Playing()) {
+	if (!soundHandle || !soundHandle->IsPlaying()) {
 		while (SoundPhase <= P_RELEASE && sounds[SoundPhase].IsEmpty()) {
 			SoundPhase++;
 		}
 
 		if (SoundPhase <= P_RELEASE) {
 			bool loop = SoundPhase == P_HOLD && (SequenceFlags & IE_VVC_LOOP);
-			unsigned int flags = GEM_SND_SPATIAL | (loop ? GEM_SND_LOOPING : 0);
-			sound_handle = core->GetAudioDrv()->Play(sounds[SoundPhase], SFXChannel::Hits, soundpos, flags);
+			auto config = core->GetAudioSettings().ConfigPresetByChannel(SFXChannel::Hits, soundpos);
+			config.loop = loop;
+
+			soundHandle = core->GetAudioPlayback().Play(sounds[SoundPhase], config);
 			SoundPhase++;
 		}
 	} else {
-		sound_handle->SetPos(soundpos);
+		soundHandle->SetPosition(soundpos);
 	}
 }
 
 void ScriptedAnimation::IncrementPhase()
 {
-	if (Phase == P_HOLD && sound_handle && (SequenceFlags & IE_VVC_LOOP)) {
+	if (Phase == P_HOLD && soundHandle && (SequenceFlags & IE_VVC_LOOP)) {
 		// kill looping sound
-		sound_handle->StopLooping();
+		soundHandle->StopLooping();
 	}
 	Phase++;
 }
@@ -587,11 +584,11 @@ bool ScriptedAnimation::UpdateDrawingState(orient_t orientation)
 	if (!(OrientationFlags & IE_VVC_FACE_FIXED)) {
 		SetOrientation(orientation);
 	}
-	
+
 	if (twin) {
 		twin->UpdateDrawingState(orientation);
 	}
-	
+
 	if (UpdatePhase()) {
 		//expired
 		return true;
@@ -603,22 +600,22 @@ bool ScriptedAnimation::UpdateDrawingState(orient_t orientation)
 	}
 
 	UpdateSound();
-	
+
 	return false;
 }
 
 //it is not sure if we need tint at all
-void ScriptedAnimation::Draw(const Region &vp, Color tint, int height, BlitFlags flags) const
+void ScriptedAnimation::Draw(const Region& vp, Color tint, int height, BlitFlags flags) const
 {
 	if (twin) {
 		twin->Draw(vp, tint, height, flags);
 	}
-	
+
 	//delayed
 	if (justCreated) {
 		return;
 	}
-	
+
 	if (Transparency & IE_VVC_TRANSPARENT) {
 		flags |= BlitFlags::HALFTRANS;
 	}
@@ -638,7 +635,7 @@ void ScriptedAnimation::Draw(const Region &vp, Color tint, int height, BlitFlags
 	//darken, greyscale, red tint are probably not needed if the global tint works
 	//these are used in the original engine to implement weather/daylight effects
 	//on the other hand
-	
+
 	if (Transparency & IE_VVC_NO_TIMESTOP) {
 		flags &= ~BlitFlags::GREY;
 	} else if (Transparency & IE_VVC_GREYSCALE) {
@@ -655,7 +652,7 @@ void ScriptedAnimation::Draw(const Region &vp, Color tint, int height, BlitFlags
 		flags &= ~BlitFlags::STENCIL_MASK;
 	}
 
-	const Animation *anim = anims[Phase * MAX_ORIENT + Orientation];
+	const Animation* anim = anims[Phase * MAX_ORIENT + Orientation];
 	if (anim)
 		VideoDriver->BlitGameSpriteWithPalette(anim->CurrentFrame(), palette, p, flags | BlitFlags::BLENDED, tint);
 
@@ -675,7 +672,7 @@ Region ScriptedAnimation::DrawingRegion() const
 		animArea.y += (YOffset - ZOffset) + Pos.y;
 		r.ExpandToRegion(animArea);
 	}
-	
+
 	if (light) {
 		Region lightArea = light->Frame;
 		lightArea.x = XOffset - light->Frame.x + Pos.x;
@@ -686,11 +683,19 @@ Region ScriptedAnimation::DrawingRegion() const
 	return r;
 }
 
+void ScriptedAnimation::SetPos(const Point& pos)
+{
+	Pos = pos;
+	if (twin) {
+		twin->Pos = pos;
+	}
+}
+
 void ScriptedAnimation::SetEffectOwned(bool flag)
 {
-	effect_owned=flag;
+	effect_owned = flag;
 	if (twin) {
-		twin->effect_owned=flag;
+		twin->effect_owned = flag;
 	}
 }
 
@@ -705,8 +710,8 @@ void ScriptedAnimation::SetBlend()
 void ScriptedAnimation::SetFade(ieByte initial, int speed)
 {
 	Tint = Color(255, 255, 255, initial);
-	Fade=speed;
-	Transparency|=BlitFlags::COLOR_MOD;
+	Fade = speed;
+	Transparency |= BlitFlags::COLOR_MOD;
 }
 
 void ScriptedAnimation::GetPaletteCopy()
@@ -715,17 +720,16 @@ void ScriptedAnimation::GetPaletteCopy()
 		return;
 	//it is not sure that the first position will have a resource in it
 	//therefore the cycle
-	for (const Animation *anim : anims) {
+	for (const Animation* anim : anims) {
 		if (!anim) continue;
 
 		Holder<Sprite2D> spr = anim->GetFrame(0);
 		if (!spr) continue;
 
 		palette = MakeHolder<Palette>(*spr->GetPalette());
-		Color shadowalpha = palette->col[1];
-		shadowalpha.a /= 2; // FIXME: not sure if this should be /=2 or = 128 (they are probably the same value for all current uses);
-		palette->CopyColorRange(&shadowalpha, &shadowalpha + 1, 1);
-		//we need only one palette, so break here
+		auto shadowColor = palette->GetColorAt(1);
+		shadowColor.a = TranslucentShadows ? 128 : 255;
+		palette->SetColor(1, shadowColor);
 		break;
 	}
 }
@@ -741,17 +745,17 @@ void ScriptedAnimation::AlterPalette(const RGBModifier& mod)
 	}
 }
 
-ScriptedAnimation *ScriptedAnimation::DetachTwin()
+ScriptedAnimation* ScriptedAnimation::DetachTwin()
 {
 	if (!twin) {
-		return NULL;
+		return nullptr;
 	}
-	ScriptedAnimation * ret = twin;
+	ScriptedAnimation* ret = twin;
 	//ret->Frame.y+=ret->ZPos+1;
 	if (ret->ZOffset >= 0) {
 		ret->ZOffset = -1;
 	}
-	twin=NULL;
+	twin = nullptr;
 	return ret;
 }
 

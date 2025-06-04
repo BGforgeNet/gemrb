@@ -21,11 +21,8 @@
 #ifndef PROIMPORTER_H
 #define PROIMPORTER_H
 
-#include "ProjectileMgr.h"
-
-#include "ie_types.h"
-
 #include "Projectile.h"
+#include "ProjectileMgr.h"
 
 namespace GemRB {
 
@@ -41,7 +38,8 @@ public:
 	~PROImporter() override;
 	PROImporter& operator=(const PROImporter&) = delete;
 	bool Open(DataStream* stream) override;
-	Projectile* GetProjectile(Projectile *s) override;
+	Projectile* GetProjectile(Projectile* s) override;
+
 private:
 	Holder<ProjectileExtension> GetAreaExtension();
 };

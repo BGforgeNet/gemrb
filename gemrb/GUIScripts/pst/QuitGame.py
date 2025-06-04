@@ -25,20 +25,21 @@ from GUIDefines import *
 import GUICommon
 import CommonWindow
 
-movies = [None,"T1DEATH","T1ABSORB","FINALE"]
-
 def OnLoad ():
+	movies = ["", "T1DEATH", "T1ABSORB", "FINALE", "CREDITS"]
+
 	CommonWindow.SetGameGUIHidden(True)
-	which = movies[GemRB.GetVar ("QuitGame1")]
-	if which!=None:
-		GemRB.PlayMovie (which,1)
-	which = movies[GemRB.GetVar ("QuitGame2")]
-	if which!=None:
-		GemRB.PlayMovie (which,1)
+	which = GemRB.GetVar ("QuitGame1")
+	if which is not None:
+		GemRB.PlayMovie (movies[which], 1)
+	which = GemRB.GetVar ("QuitGame2")
+	if which is not None:
+		GemRB.PlayMovie (movies[which], 1)
 	which = GemRB.GetVar ("QuitGame3")
 	if which:
 		DeathWindowEnd ()
 	else:
+		GemRB.PlayMovie (movies[4], 1)
 		GemRB.QuitGame ()
 		GemRB.SetNextScript("Start")
 

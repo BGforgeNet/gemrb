@@ -26,14 +26,15 @@
 #ifndef GUIFACTORY_H
 #define GUIFACTORY_H
 
-#include "GUI/GUIScriptInterface.h"
-#include "GUI/WindowManager.h"
-
 #include "Plugin.h"
+#include "ScriptEngine.h"
+
+#include "GUI/Window.h"
 
 namespace GemRB {
 
 class Window;
+class WindowManager;
 
 // Abstract loader for GUI windows (and controls with them).
 class GEM_EXPORT GUIFactory : public ImporterBase {
@@ -52,7 +53,6 @@ public:
 	virtual bool LoadWindowPack(const ScriptingGroup_t&) = 0;
 	/** Creates a Window in the Window Manager */
 	Window* CreateWindow(ScriptingId winId, const Region& rgn) const;
-
 };
 
 }

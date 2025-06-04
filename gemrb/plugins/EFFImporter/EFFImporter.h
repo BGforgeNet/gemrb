@@ -23,10 +23,6 @@
 
 #include "EffectMgr.h"
 
-#include "ie_types.h"
-
-#include "Effect.h"
-
 namespace GemRB {
 
 class EFFImporter : public EffectMgr {
@@ -46,7 +42,7 @@ public:
 	Effect* GetEffect() override;
 	Effect* GetEffectV1() override;
 	Effect* GetEffectV20() override;
-	void PutEffectV2(DataStream *stream, const Effect *fx) override; // used in the area and cre importer
+	void PutEffectV2(DataStream* stream, const Effect* fx) override; // used in the area and cre importer
 };
 
 

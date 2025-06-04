@@ -17,29 +17,30 @@
  *
  */
 
-#include <gtest/gtest.h>
-
 #include "ie_types.h"
 
 #include "Strings/CString.h"
 
+#include <gtest/gtest.h>
+
 namespace GemRB {
 
-TEST(CString_Test, IsASCII) {
-	auto unit0 = FixedSizeString<0>{""};
+TEST(CStringTest, IsASCII)
+{
+	auto unit0 = FixedSizeString<0> { "" };
 	EXPECT_TRUE(unit0.IsASCII());
 
-	auto unit3 = FixedSizeString<3>{"abc"};
+	auto unit3 = FixedSizeString<3> { "abc" };
 	EXPECT_TRUE(unit3.IsASCII());
 
-	unit3 = FixedSizeString<3>{"äöü"};
+	unit3 = FixedSizeString<3> { "äöü" };
 	EXPECT_FALSE(unit3.IsASCII());
 
-	unit3 = FixedSizeString<3>{"ab\xFE"};
+	unit3 = FixedSizeString<3> { "ab\xFE" };
 	EXPECT_FALSE(unit3.IsASCII());
 }
 
-TEST(CString_Test, Format)
+TEST(CStringTest, Format)
 {
 	auto src = FixedSizeString<8> { "spwi103" };
 	auto fu = FixedSizeString<8> { "" };

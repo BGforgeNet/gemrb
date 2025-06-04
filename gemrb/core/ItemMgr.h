@@ -28,11 +28,12 @@
 #ifndef ITEMMGR_H
 #define ITEMMGR_H
 
-#include "Item.h"
 #include "Plugin.h"
 #include "TableMgr.h"
 
 namespace GemRB {
+
+class Item;
 
 /**
  * @class ItemMgr
@@ -44,9 +45,10 @@ protected:
 	AutoTable tooltipTable; // tooltips (duh)
 	AutoTable exclusionTable; // a table of items that are mutually exclusive
 	AutoTable dialogTable; // dialogs attached to items (conversables such as Lilarcor)
+
 public:
 	ItemMgr(void);
-	virtual Item* GetItem(Item *s) = 0;
+	virtual Item* GetItem(Item* s) = 0;
 };
 
 }

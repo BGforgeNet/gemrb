@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.19)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.25)
 
 SET(CMAKE_CXX_STANDARD 14)
 
@@ -78,6 +78,12 @@ if(APPIMAGE)
 endif()
 
 CHECK_IS_RELEASE_VERSION()
+# install pre-commit hook and set up git blame
+IF(IS_DIRECTORY "${CMAKE_SOURCE_DIR}/.git" AND NOT EXISTS "${CMAKE_SOURCE_DIR}/.git/hooks/pre-commit")
+  message(STATUS "Installing git pre-commit hook and .git-blame-ignore-revs file")
+  file(COPY admin/pre-commit DESTINATION "${CMAKE_SOURCE_DIR}/.git/hooks")
+  execute_process(COMMAND git "config" "--add" "blame.ignoreRevsFile" ".git-blame-ignore-revs")
+ENDIF()
 
 IF(NOT STATIC_LINK)
 	# prevent static libraries from being selected by FIND_LIBRARY
@@ -107,6 +113,7 @@ FIND_PACKAGE(Threads REQUIRED)
 
 # Tests (need init'd before subdirectories)
 IF (USE_TESTS)
+	LIST(APPEND CMAKE_FIND_LIBRARY_SUFFIXES ".a") # readd, perhaps was removed above
 	FIND_PACKAGE(GTest REQUIRED)
 	INCLUDE(CTest)
 	ENABLE_TESTING()
@@ -123,7 +130,7 @@ IF(USE_TRACY)
 	FETCHCONTENT_DECLARE(
 		tracy
 		GIT_REPOSITORY https://github.com/wolfpld/tracy.git
-		GIT_TAG v0.10
+		GIT_TAG v0.11.1
 		GIT_SHALLOW TRUE
 		GIT_PROGRESS TRUE
 	)

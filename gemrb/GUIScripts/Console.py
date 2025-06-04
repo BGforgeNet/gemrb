@@ -20,7 +20,7 @@ def OnLoad():
 	console = consoleWin.ReplaceSubview (0, IE_GUI_CONSOLE, hist)
 	console.AddAlias ("CONSOLE_CTL", 1);
 	
-	consoleWin.SetAction(console.Focus, ACTION_WINDOW_FOCUS_GAINED)
+	consoleWin.OnFocus (console.Focus)
 	
 	consoleOut = consoleWin.GetControl(1)
 	consoleOut.SetFlags (IE_GUI_TEXTAREA_AUTOSCROLL)
@@ -94,7 +94,15 @@ def Exec(cmd):
 		if con:
 			sys.stdout = OutputCapture(stdout)
 
-		return eval(cmd)
+		locals = {} # we dont want to expose our locals
+		modend = cmd.find('.')
+		paren = cmd.find('(')
+		if modend > -1 and (paren == -1 or modend < paren):
+			import importlib
+			importlib.invalidate_caches()
+			modname = cmd[0:modend]
+			locals[modname] = importlib.import_module(modname)
+		return eval(cmd, globals(), locals)
 	except (SyntaxError, NameError, TypeError, ZeroDivisionError) as error:
 		if con:
 			con.Append("[color=ffffff]" + cmd + ": [/color][color=ff0000]" + str(error) + "[/color]\n")

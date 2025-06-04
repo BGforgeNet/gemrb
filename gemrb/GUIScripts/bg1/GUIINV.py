@@ -125,12 +125,10 @@ def InitInventoryWindow (Window):
 	GemRB.GamePause(0, 0)
 	return
 
-def UpdateInventoryWindow (Window = None):
+def UpdateInventoryWindow (Window):
 	"""Redraws the inventory window and resets TopIndex."""
 
-	if Window == None:
-		Window = GemRB.GetView("WIN_INV")
-
+	Window.OnClose(InventoryCommon.InventoryClosed)
 	pc = GemRB.GameGetSelectedPCSingle ()
 	Container = GemRB.GetContainer (pc, 1)
 	ScrollBar = Window.GetControl (66)
@@ -146,8 +144,6 @@ def UpdateInventoryWindow (Window = None):
 
 ToggleInventoryWindow = GUICommonWindows.CreateTopWinLoader(2, "GUIINV", GUICommonWindows.ToggleWindow, InitInventoryWindow, UpdateInventoryWindow)
 OpenInventoryWindow = GUICommonWindows.CreateTopWinLoader(2, "GUIINV", GUICommonWindows.OpenWindowOnce, InitInventoryWindow, UpdateInventoryWindow)
-
-InventoryCommon.UpdateInventoryWindow = UpdateInventoryWindow
 
 def RefreshInventoryWindow (Window):
 	"""Partial redraw without resetting TopIndex."""
@@ -245,12 +241,14 @@ def RefreshInventoryWindow (Window):
 	TopIndex = GemRB.GetVar ("TopIndex")
 	for i in range (5):
 		Button = Window.GetControl (i+68)
+		Slot = GemRB.GetContainerItem (pc, i+TopIndex)
 		if GemRB.IsDraggingItem ()==1:
 			Button.SetState (IE_GUI_BUTTON_FAKEPRESSED)
+		elif not Slot:
+			Button.SetState (IE_GUI_BUTTON_LOCKED)
 		else:
 			Button.SetState (IE_GUI_BUTTON_ENABLED)
 		Button.SetAction (InventoryCommon.OnDragItemGround, IE_ACT_DRAG_DROP_DST)
-		Slot = GemRB.GetContainerItem (pc, i+TopIndex)
 
 		if Slot == None:
 			Button.OnPress (None)

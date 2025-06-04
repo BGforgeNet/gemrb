@@ -22,7 +22,6 @@
 #define IMAGEFACTORY_H
 
 #include "exports.h"
-#include "globals.h"
 
 #include "FactoryObject.h"
 #include "Sprite2D.h"
@@ -32,6 +31,7 @@ namespace GemRB {
 class GEM_EXPORT ImageFactory : public FactoryObject {
 private:
 	Holder<Sprite2D> bitmap;
+
 public:
 	ImageFactory(const ResRef& resref, Holder<Sprite2D> bitmap);
 

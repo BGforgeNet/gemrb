@@ -21,10 +21,9 @@
 #ifndef KEYMAP_H
 #define KEYMAP_H
 
-#include <unordered_map>
-
 #include "exports.h"
 #include "ie_types.h"
+
 #include "Strings/StringMap.h"
 #include "System/VFS.h"
 

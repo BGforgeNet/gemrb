@@ -27,7 +27,10 @@
 #ifndef RESOURCE_H
 #define RESOURCE_H
 
+#include "ie_types.h"
+
 #include "Plugin.h"
+
 #include "Strings/CString.h"
 
 #include <unordered_map>
@@ -37,7 +40,7 @@ namespace GemRB {
 /** Resource reference */
 class DataStream;
 
-template <typename T>
+template<typename T>
 using ResRefMap = std::unordered_map<ResRef, T, CstrHashCI>;
 
 /**
@@ -46,7 +49,7 @@ using ResRefMap = std::unordered_map<ResRef, T, CstrHashCI>;
 
 using Resource = ImporterBase;
 
-template <class T>
+template<class T>
 using ResourceHolder = std::shared_ptr<T>; // TODO: this should be type constrained
 
 }

@@ -21,6 +21,7 @@ import GemRB
 import LoadScreen
 from GUIDefines import *
 from datetime import datetime
+from ie_action import ACT_DEFEND, ACT_WEAPON1, ACT_OFFHAND
 
 QuickLoadSlot = 0
 StartWindow = None;
@@ -36,6 +37,10 @@ def OnLoad():
 		GemRB.PlayMovie ('INTRO', 1)
 		GemRB.SetVar ("SkipIntroVideos", 1)
 
+	# defend replaces talk and display the whole weapon set instead of one weapon each of 2 sets
+	# this has to be set before a game is started!
+	GemRB.SetDefaultActions (1, ACT_DEFEND, ACT_WEAPON1, ACT_OFFHAND)
+
 #main window
 	StartWindow = GemRB.LoadWindow(0, "GUICONN")
 	StartWindow.AddAlias ("STARTWIN", 0, True)
@@ -50,7 +55,7 @@ def OnLoad():
 			AnimButton = StartWindow.CreateButton (0xfff0001, 57, 333, 100, 100);
 		AnimButton.SetAnimation ("MMTRCHB")
 		AnimButton.SetState (IE_GUI_BUTTON_LOCKED)
-		AnimButton.SetFlags (IE_GUI_BUTTON_PLAYALWAYS|IE_GUI_BUTTON_CENTER_PICTURES, OP_OR)
+		AnimButton.SetFlags (IE_GUI_BUTTON_CENTER_PICTURES, OP_OR)
 
 	ProtocolButton = StartWindow.GetControl(0x00)
 	NewGameButton = StartWindow.GetControl(0x02)
@@ -107,7 +112,7 @@ def OnLoad():
 	StartWindow.Focus()
 	GemRB.LoadMusicPL("Theme.mus")
 	
-	StartWindow.SetAction(RefreshProtocol, ACTION_WINDOW_FOCUS_GAINED)
+	StartWindow.OnFocus (RefreshProtocol)
 
 	return
 

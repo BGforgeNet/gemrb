@@ -21,34 +21,33 @@ import GemRB
 import GameCheck
 from GUIDefines import SV_SAVEPATH
 
-skip_videos = False
+skipVideos = False
 
 def RunStart2(isTOB):
-	global skip_videos
-	
+	global skipVideos
+
+	skipIntro = GemRB.GetVar ("SeenIntroVideos")
 	if isTOB:
-		GemRB.SetMasterScript("BALDUR25","WORLDM25")
-		GemRB.SetVar("oldgame",0)
-		if not skip_videos and not skip_videos&2:
+		GemRB.SetMasterScript("BALDUR25", "WORLDM25")
+		GemRB.SetVar("oldgame", 0)
+		if not skipVideos and skipIntro & 2 == 0:
 			GemRB.PlayMovie ("INTRO", 1)
-			skip_videos |= 2
+			skipIntro |= 2
+		GemRB.LoadMusicPL ("ThemeT.mus", 1)
 	else:
-		GemRB.SetMasterScript("BALDUR","WORLDMAP")
-		GemRB.SetVar("oldgame",1)
-		if not skip_videos and not skip_videos&4:
+		GemRB.SetMasterScript("BALDUR", "WORLDMAP")
+		GemRB.SetVar("oldgame", 1)
+		if not skipVideos and skipIntro & 4 == 0:
 			GemRB.PlayMovie ("INTRO15F", 1)
-			skip_videos |= 4
-			
+			skipIntro |= 4
+		GemRB.LoadMusicPL ("Theme.mus", 1)
+
+	GemRB.SetVar ("SeenIntroVideos", skipIntro)
 	if GameCheck.IsBG2Demo():
 		GemRB.SetFeature (GF_ALL_STRINGS_TAGGED, True)
 
 	GemRB.SetNextScript("Start2")
-	MusicTable = GemRB.LoadTable ("songlist")
-	# the table has useless rownames, so we can't search for BG2Theme
-	theme = MusicTable.GetValue ("33", "RESOURCE")
-	GemRB.LoadMusicPL (theme, 1)
 
-# TODO: mimic RunStart2 and plug back into Start2 at the end
 def RunStartEE():
 	StartWindow = GemRB.LoadWindow (11, "START")
 	Label = StartWindow.CreateLabel (0x0fff0000, 0, 0, 1024, 30, "REALMS", "", IE_FONT_SINGLE_LINE | IE_FONT_ALIGN_CENTER)
@@ -60,26 +59,38 @@ def RunStartEE():
 
 	GemRB.SetToken ("SaveDir", "save")
 
+	soaButton = StartWindow.GetControl (1)
+	soaButton.OnPress (lambda: RunStart2(False))
+
 	tobButton = StartWindow.GetControl (2)
-	tobButton.OnPress (LoadSingleEE)
-	ExitButton = StartWindow.GetControl (4)
+	tobButton.OnPress (lambda: RunStart2(True))
+
+	bp2Button = StartWindow.GetControl (3)
+
+	for btn in [soaButton, tobButton, bp2Button]:
+		btn.OnMouseEnter (lambda btn: btn.SetState (IE_GUI_BUTTON_FAKEPRESSED))
+		btn.OnMouseLeave (lambda btn: btn.SetState (IE_GUI_BUTTON_ENABLED))
+
+	# leftmost, Credits, button is missing from the chu
+	# maybe just create it and reuse it for quick load, taking the most recent of the various quick saves?
+
+	OptButton = StartWindow.GetControl (4)
+	OptButton.SetText (13905)
+	OptButton.OnPress (lambda: GemRB.SetNextScript ("StartOpt"))
+
+	ExitButton = StartWindow.GetControl (5)
 	ExitButton.SetText (13731)
 	ExitButton.OnPress (lambda: GemRB.Quit())
 	ExitButton.MakeEscape ()
 
-def LoadSingleEE():
-	GemRB.SetVar ("PlayMode", 2)
-	GemRB.SetMasterScript ("BALDUR25", "WORLDM25")
-	GemRB.SetNextScript ("GUILOAD")
-
 def OnLoad():
-	global skip_videos
+	global skipVideos
 
 	# migrate mpsave saves if possible and needed
 	MigrateSaveDir ()
 
-	skip_videos = GemRB.GetVar ("SkipIntroVideos")
-	if not skip_videos and not GemRB.GetVar ("SeenIntroVideos"):
+	skipVideos = GemRB.GetVar ("SkipIntroVideos") or 0
+	if not skipVideos and not GemRB.GetVar ("SeenIntroVideos"):
 		if GameCheck.IsBG2EE ():
 			GemRB.PlayMovie ("logo", 1)
 			GemRB.PlayMovie ("intro", 1)
@@ -120,7 +131,7 @@ def OnLoad():
 	ToBButton.OnPress (lambda: RunStart2(True))
 	ExitButton.OnPress (lambda: GemRB.Quit())
 	StartWindow.Focus()
-	GemRB.LoadMusicPL("Cred.mus")
+	GemRB.LoadMusicPL("ThemeT.mus")
 	return
 
 def MigrateSaveDir():

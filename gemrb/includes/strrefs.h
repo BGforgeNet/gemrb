@@ -226,6 +226,12 @@ enum class HCStrings : TableMgr::index_t {
 	MoralePanic, // used with offset from MoraleBerserk
 	TrapFound,
 	BackstabDouble,
+	Evaded1,
+	Evaded2,
+	HealingRest,
+	HealingRestFull,
+	UnusableDroppedBag,
+	UnusableDroppedGround,
 
 	count,
 };

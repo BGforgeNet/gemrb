@@ -18,8 +18,6 @@
 
 #include "GUIScriptInterface.h"
 
-#include "Resource.h"
-
 namespace GemRB {
 
 static inline ScriptingId ModifiedCtrlIdForWin(ScriptingId id, const WindowScriptingRef* winref)
@@ -85,7 +83,7 @@ const ControlScriptingRef* RegisterScriptableControl(Control* ctrl, ScriptingId 
 		}
 	}
 
-	ctrl->ControlID = (ieDword)id;
+	ctrl->ControlID = (ieDword) id;
 
 	if (existing) {
 		return static_cast<const ControlScriptingRef*>(ctrl->ReplaceScriptingRef(existing, id, group));

@@ -74,6 +74,8 @@ def InitInventoryWindow (Window):
 	SlotCount = GemRB.GetSlotType (-1)["Count"]
 	for slot in range (SlotCount):
 		SlotType = GemRB.GetSlotType (slot)
+		if SlotType["ID"] == -1:
+			continue
 		Button = Window.GetControl (SlotType["ID"])
 		if Button:
 			Button.OnMouseEnter (InventoryCommon.MouseEnterSlot)
@@ -104,10 +106,6 @@ def InitInventoryWindow (Window):
 
 	ScrollBar = Window.GetControl (45)
 	ScrollBar.OnChange (lambda: RefreshInventoryWindow(Window))
-
-	for i in range (57, 64):
-		Label = Window.GetControl (0x10000000 + i)
-		Label.SetText (str (i))
 
 	# portrait
 	Button = Window.GetControl (44)
@@ -140,14 +138,12 @@ def InitInventoryWindow (Window):
 
 	return
 
-def UpdateInventoryWindow (Window = None):
+def UpdateInventoryWindow (Window):
 	"""Redraws the inventory window and resets TopIndex."""
 
 	global SlotMap
 
-	if Window == None:
-		Window = GemRB.GetView("WIN_INV")
-
+	Window.OnClose(InventoryCommon.InventoryClosed)
 	GUICommonWindows.UpdateAnimation ()
 
 	pc = GemRB.GameGetSelectedPCSingle ()
@@ -157,7 +153,7 @@ def UpdateInventoryWindow (Window = None):
 	Count = Container['ItemCount']
 	if Count<1:
 		Count=1
-	ScrollBar.SetVarAssoc ("TopIndex", Count)
+	ScrollBar.SetVarAssoc ("TopIndex", max(0, (Count - 10 + 1) // 2))
 	RefreshInventoryWindow (Window)
 
 	# PST uses unhardcoded/avslots.2da to decide which slots do what per character
@@ -172,8 +168,6 @@ def UpdateInventoryWindow (Window = None):
 ToggleInventoryWindow = GUICommonWindows.CreateTopWinLoader(3, "GUIINV", GUICommonWindows.ToggleWindow, InitInventoryWindow, UpdateInventoryWindow)
 OpenInventoryWindow = GUICommonWindows.CreateTopWinLoader(3, "GUIINV", GUICommonWindows.OpenWindowOnce, InitInventoryWindow, UpdateInventoryWindow)
 
-InventoryCommon.UpdateInventoryWindow = UpdateInventoryWindow
-
 def RefreshInventoryWindow (Window):
 	"""Partial redraw without resetting TopIndex."""
 
@@ -183,12 +177,10 @@ def RefreshInventoryWindow (Window):
 	Label = Window.GetControl (0x10000039)
 	Label.SetText (GemRB.GetPlayerName (pc, 1))
 
-
 	# portrait
 	Button = Window.GetControl (44)
 	Button.SetPicture (GUICommonWindows.GetActorPortrait (pc, 'INVENTORY'))
 
-	# there's a label at 0x1000003a, but we don't need it
 	GUICommon.SetEncumbranceLabels (Window, 46, None, pc)
 
 	# armor class
@@ -222,12 +214,15 @@ def RefreshInventoryWindow (Window):
 	TopIndex = GemRB.GetVar ("TopIndex")
 	for i in range (10):
 		Button = Window.GetControl (i+47)
+		Slot = GemRB.GetContainerItem (pc, i+TopIndex)
 		if GemRB.IsDraggingItem ():
 			Button.SetState (IE_GUI_BUTTON_FAKEPRESSED)
+		elif not Slot:
+			Button.SetState (IE_GUI_BUTTON_LOCKED)
 		else:
 			Button.SetState (IE_GUI_BUTTON_ENABLED)
 		Button.SetAction (InventoryCommon.OnDragItemGround, IE_ACT_DRAG_DROP_DST)
-		Slot = GemRB.GetContainerItem (pc, i+TopIndex)
+
 		if Slot != None:
 			item = GemRB.GetItem (Slot['ItemResRef'])
 			identified = Slot["Flags"] & IE_INV_ITEM_IDENTIFIED
@@ -262,13 +257,7 @@ def RefreshInventoryWindow (Window):
 			Button.OnDoublePress (None)
 	return
 
-def DefaultWeapon ():
-	pc = GemRB.GameGetFirstSelectedActor ()
-	GemRB.SetEquippedQuickSlot (pc, 1000, -1)
-	UpdateInventoryWindow ()
-	return
-
-def OnAutoEquip ():
+def OnAutoEquip (btn):
 	if not GemRB.IsDraggingItem ():
 		return
 
@@ -281,7 +270,7 @@ def OnAutoEquip ():
 	if ret == 2 and item and (item['ItemResRef'] == "dustrobe"):
 		GemRB.SetGlobal("APPEARANCE","GLOBAL",2)
 
-	UpdateInventoryWindow ()
+	UpdateInventoryWindow (btn.Window)
 	return
 
 ###################################################

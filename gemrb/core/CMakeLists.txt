@@ -1,9 +1,13 @@
 FILE(GLOB gemrb_core_LIB_SRCS
-	Ambient.cpp
-	AmbientMgr.cpp
 	Animation.cpp
 	AnimationFactory.cpp
-	Audio.cpp
+	Audio/Ambient.cpp
+	Audio/AmbientMgr.cpp
+	Audio/AudioBackend.cpp
+	Audio/AudioPlaybackConfig.cpp
+	Audio/AudioSettings.cpp
+	Audio/MusicLoop.cpp
+	Audio/Playback.cpp
 	Calendar.cpp
 	CharAnimations.cpp
 	Core.cpp
@@ -36,6 +40,7 @@ FILE(GLOB gemrb_core_LIB_SRCS
 	Map.cpp
 	MapReverb.cpp
 	MoviePlayer.cpp
+	MurmurHash.cpp
 	Palette.cpp
 	PalettedImageMgr.cpp
 	Particles.cpp
@@ -100,9 +105,12 @@ FILE(GLOB gemrb_core_LIB_SRCS
 	Scriptable/CombatInfo.cpp
 	Scriptable/Container.cpp
 	Scriptable/Door.cpp
+	Scriptable/Highlightable.cpp
 	Scriptable/InfoPoint.cpp
+	Scriptable/Movable.cpp
 	Scriptable/OverHeadText.cpp
 	Scriptable/Scriptable.cpp
+	Scriptable/Selectable.cpp
 	Scriptable/PCStatStruct.cpp
 	Scriptable/TileObject.cpp
 	Streams/DataStream.cpp
@@ -142,9 +150,9 @@ IF(WIN32)
 		../../platforms/windows/CodepageToIconvMap.cpp
 		../../platforms/windows/WindowsFile.cpp
 	)
-	INCLUDE_DIRECTORIES(${Iconv_INCLUDE_DIR})
 ENDIF()
 
+INCLUDE_DIRECTORIES(${Iconv_INCLUDE_DIR})
 ADD_DEFINITIONS("-DGEM_BUILDING_CORE")
 
 if (STATIC_LINK)
@@ -165,7 +173,7 @@ IF(WIN32)
 ENDIF()
 
 IF(USE_TRACY)
-  TARGET_LINK_LIBRARIES(gemrb_core TracyClient)
+  TARGET_LINK_LIBRARIES(gemrb_core Tracy)
 ENDIF()
 
 target_compile_definitions(gemrb_core PRIVATE _USE_MATH_DEFINES)

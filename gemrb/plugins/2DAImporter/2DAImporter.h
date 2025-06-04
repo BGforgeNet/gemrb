@@ -23,9 +23,6 @@
 
 #include "TableMgr.h"
 
-#include "globals.h"
-
-#include <cstring>
 #include <vector>
 
 namespace GemRB {
@@ -39,6 +36,7 @@ private:
 	std::vector<cell_t> rowNames;
 	std::vector<row_t> rows;
 	std::string defVal;
+
 public:
 	static index_t npos;
 

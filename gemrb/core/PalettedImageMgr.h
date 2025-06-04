@@ -21,11 +21,8 @@
 
 #include "Resource.h"
 #include "Sprite2D.h"
-#include "Streams/DataStream.h"
 
 namespace GemRB {
-
-class ImageFactory;
 
 /**
  * Base class for Paletted Imqge plugins
@@ -36,6 +33,7 @@ class ImageFactory;
 class GEM_EXPORT PalettedImageMgr : public Resource {
 public:
 	static const TypeID ID;
+
 public:
 	/**
 	 * Returns a @ref{Sprite2D} that has been colored with the given palette.

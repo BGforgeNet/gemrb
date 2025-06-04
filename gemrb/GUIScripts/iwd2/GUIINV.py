@@ -139,29 +139,34 @@ def ChangeWeaponPressed ():
 	return
 
 #complete update
-def UpdateInventoryWindow (Window = None):
-	if Window == None:
-		Window = GemRB.GetView("WIN_INV")
-
+def UpdateInventoryWindow (Window):
+	Window.OnClose(InventoryCommon.InventoryClosed)
 	pc = GemRB.GameGetSelectedPCSingle ()
 	Container = GemRB.GetContainer (pc, 1)
 	ScrollBar = Window.GetControl (66)
 	Count = Container['ItemCount']
 	# account for two columns
 	ScrollBar.SetVarAssoc ("TopIndex", max(0, (Count - 6 + 1) // 2))
+
 	Equipped = GemRB.GetEquippedQuickSlot (pc, 1)
 	GemRB.SetVar ("Equipped", Equipped)
 	for i in range (4):
 		Button = Window.GetControl (109+i)
 		Button.SetVarAssoc("Equipped", i)
+	# eeh, radio buttons ...
+	for i in range (4):
+		Button = Window.GetControl (109 + i)
+		if i == Equipped:
+			Button.SetState (IE_GUI_BUTTON_SELECTED)
+		else:
+			Button.SetState (IE_GUI_BUTTON_ENABLED)
+
 	RefreshInventoryWindow ()
 	# populate inventory slot controls
 	SlotCount = GemRB.GetSlotType (-1)["Count"]
 	for i in range (SlotCount):
 		InventoryCommon.UpdateSlot (pc, i)
 	return
-
-InventoryCommon.UpdateInventoryWindow = UpdateInventoryWindow
 
 ToggleInventoryWindow = GUICommonWindows.CreateTopWinLoader(2, "GUIINV", GUICommonWindows.ToggleWindow, InitInventoryWindow, UpdateInventoryWindow)
 OpenInventoryWindow = GUICommonWindows.CreateTopWinLoader(2, "GUIINV", GUICommonWindows.OpenWindowOnce, InitInventoryWindow, UpdateInventoryWindow)
@@ -181,8 +186,7 @@ def RefreshInventoryWindow ():
 	pdoll = GUICommonWindows.GetActorPaperDoll (pc)+"G11"
 	if GemRB.HasResource (pdoll, RES_BAM):
 		pal = [GemRB.GetPlayerStat (pc, c) for c in range(IE_METAL_COLOR, IE_HAIR_COLOR + 1)]
-		Button.SetAnimation (None) # force reset
-		Button.SetAnimation (pdoll, 1, 8, pal)
+		Button.SetAnimation (pdoll, 1, A_ANI_ACTIVE, pal)
 
 	# portrait
 	Button = Window.GetControl (84)
@@ -233,14 +237,16 @@ def RefreshInventoryWindow ():
 		# use a different item, so the order is LTR
 		i = min(5, HorizontalSlots[cid] - 68)
 		slotID = i + TopIndex
+		Slot = GemRB.GetContainerItem (pc, slotID)
 
 		if GemRB.IsDraggingItem ()==1:
 			Button.SetState (IE_GUI_BUTTON_FAKEPRESSED)
+		elif not Slot:
+			Button.SetState (IE_GUI_BUTTON_LOCKED)
 		else:
 			Button.SetState (IE_GUI_BUTTON_ENABLED)
 		Button.SetAction (InventoryCommon.OnDragItemGround, IE_ACT_DRAG_DROP_DST)
 
-		Slot = GemRB.GetContainerItem (pc, slotID)
 		if Slot == None:
 			Button.OnPress (None)
 			Button.OnRightPress (None)

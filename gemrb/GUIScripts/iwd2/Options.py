@@ -20,6 +20,7 @@
 
 import GemRB
 import GUIOPT
+import GUIOPTExtra
 from GUIDefines import *
 
 def OnLoad():
@@ -27,14 +28,14 @@ def OnLoad():
 
 	MessageBarWindow = GemRB.LoadWindow(0, "GUIOPT")
 
-	CharactersBarWindow = GemRB.LoadWindow(1)
+	CharactersBarWindow = GemRB.LoadWindow(1, "GUIOPT")
 
 	if MessageBarWindow:
 		MessageBarWindow.Close ()
 	if CharactersBarWindow:
 		CharactersBarWindow.Close ()
 
-	OptionsWindow = GemRB.LoadWindow(13)
+	OptionsWindow = GemRB.LoadWindow(13, "GUIOPT")
 
 	VersionLabel = OptionsWindow.GetControl(0x1000000B)
 	VersionLabel.SetText(GemRB.Version)
@@ -63,6 +64,10 @@ def OnLoad():
 		OptionsWindow.Close ()
 	ReturnButton.OnPress (CloseStartOptions)
 	ReturnButton.MakeEscape()
+
+	# GemRB extras
+	frame = KeyboardButton.GetFrame ()
+	GUIOPTExtra.AddGemRBOptionsButton (OptionsWindow, frame, 0, 60, "GBTNLRG2")
 
 	OptionsWindow.Focus()
 	GemRB.GetView ("STARTWIN").SetDisabled (True)
