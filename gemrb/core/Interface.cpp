@@ -2173,8 +2173,9 @@ int Interface::PlayMovie(const ResRef& movieRef)
 		music->Start();
 	ambientManager->Activate();
 
-	//Setting the movie name to 1
+	// make the movie available in the movies list immediately
 	vars.Set(movieRef, 1);
+	SaveConfig();
 	return 0;
 }
 
@@ -3622,10 +3623,12 @@ Effect* Interface::GetEffect(const ResRef& resname, int level, const Point& p)
 	if (!effect) {
 		return nullptr;
 	}
-	if (!level) {
-		level = 1;
+	if (level != -1) {
+		if (!level) {
+			level = 1;
+		}
+		effect->Power = level;
 	}
-	effect->Power = level;
 	effect->Pos = p;
 	return effect;
 }
