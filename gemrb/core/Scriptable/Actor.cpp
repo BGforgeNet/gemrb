@@ -4957,7 +4957,8 @@ std::string Actor::dump() const
 	AppendFormat(buffer, "Global ID:  {}   PartySlot: {}\n", GetGlobalID(), InParty);
 	AppendFormat(buffer, "Script name:{:<32}    Current action: {}    Total: {}\n", scriptName, CurrentAction ? CurrentAction->actionID : -1, actionQueue.size());
 	AppendFormat(buffer, "Int. Flags: {:#x}    ", InternalFlags);
-	AppendFormat(buffer, "MC Flags: {:#x}    ", Modified[IE_MC_FLAGS]);
+	AppendFormat(buffer, "MC Flags: {:#x}    \n", Modified[IE_MC_FLAGS]);
+	AppendFormat(buffer, "State: {:#x}     current state: {:#x}\n", BaseStats[IE_STATE_ID], Modified[IE_STATE_ID]);
 	AppendFormat(buffer, "Allegiance: {}   current allegiance:{}\n", BaseStats[IE_EA], Modified[IE_EA]);
 	AppendFormat(buffer, "Class:      {}   current class:{}    Kit: {} (base: {})\n", BaseStats[IE_CLASS], Modified[IE_CLASS], Modified[IE_KIT], BaseStats[IE_KIT]);
 	AppendFormat(buffer, "Race:       {}   current race:{}\n", BaseStats[IE_RACE], Modified[IE_RACE]);
@@ -8019,11 +8020,10 @@ void Actor::SetColorMod(ieDword location, RGBModifier::Type type, int speed,
 		ca->GlobalColorMod.type = type;
 		ca->GlobalColorMod.speed = speed;
 		ca->GlobalColorMod.rgb = color;
-		if (phase >= 0)
+		if (phase >= 0) {
 			ca->GlobalColorMod.phase = phase;
-		else {
-			if (ca->GlobalColorMod.phase > 2 * speed)
-				ca->GlobalColorMod.phase = 0;
+		} else if (ca->GlobalColorMod.phase > 2 * speed) {
+			ca->GlobalColorMod.phase = 0;
 		}
 		return;
 	}
@@ -11751,4 +11751,8 @@ bool Actor::TouchAttack(const Projectile* pro) const
 	return !fail;
 }
 
+Actor::BlockingSizeCategory Actor::getSizeCategory() const
+{
+	return this->circleSize;
+}
 }
