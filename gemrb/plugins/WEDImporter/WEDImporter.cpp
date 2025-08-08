@@ -131,7 +131,9 @@ int WEDImporter::AddOverlay(TileMap* tm, const Overlay* newOverlays, bool rain) 
 			str->Read(&animspeed, 1);
 			// WORD    wFlags in the original (currently unused)
 			if (animspeed == 0) {
-				animspeed = ANI_DEFAULT_FRAMERATE;
+				animspeed = ANI_DEFAULT_FRAMERATE * core->GetAnimationSpeedScale();
+			} else {
+				animspeed = animspeed * core->GetAnimationSpeedScale();
 			}
 			str->Seek(newOverlays->TILOffset + startindex * 2, GEM_STREAM_START);
 			std::vector<ieWord> indices(count);

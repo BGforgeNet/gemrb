@@ -739,6 +739,7 @@ public:
 
 	Timer& SetTimer(const EventHandler&, tick_t interval, int repeats = -1);
 	float GetAnimationFPS(const ResRef& anim) const;
+	float GetAnimationSpeedScale() const;
 	void ApplyTooltipDelay() const;
 };
 

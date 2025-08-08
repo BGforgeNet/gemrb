@@ -3591,7 +3591,7 @@ static PyObject* GemRB_Button_SetAnimation(PyObject* self, PyObject* args)
 		return RuntimeError("Invalid argument for 'cols'");
 	}
 
-	float fps = ANI_DEFAULT_FRAMERATE;
+	float fps = ANI_DEFAULT_FRAMERATE * core->GetAnimationSpeedScale();
 	std::shared_ptr<Animation> anim;
 	if (PyUnicode_Check(pyAnim)) {
 		const ResRef& ref = ResRefFromPy(pyAnim);

@@ -236,9 +236,12 @@ ScriptedAnimation::ScriptedAnimation(DataStream* stream)
 	stream->ReadDword(FrameRate);
 
 	if (!FrameRate)
-		FrameRate = ANI_DEFAULT_FRAMERATE;
-	else if (FrameRate > 30)
-		FrameRate = 30;
+		FrameRate = ANI_DEFAULT_FRAMERATE * core->GetAnimationSpeedScale();
+	else {
+		FrameRate = FrameRate * core->GetAnimationSpeedScale();
+		if (FrameRate > 30 * core->GetAnimationSpeedScale())
+			FrameRate = 30 * core->GetAnimationSpeedScale();
+	}
 
 	stream->ReadDword(NumOrientations);
 	stream->ReadDword(tmp);

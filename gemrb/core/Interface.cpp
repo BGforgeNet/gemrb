@@ -4130,16 +4130,27 @@ void Interface::SetNextScript(const path_t& script)
 float Interface::GetAnimationFPS(const ResRef& anim) const
 {
 	AutoTable animFPS = gamedata->LoadTable("animfps", true);
-	if (!animFPS) return ANI_DEFAULT_FRAMERATE;
+	float baseFPS = ANI_DEFAULT_FRAMERATE;
 
-	static TableMgr::index_t rows = animFPS->GetRowCount();
-	for (TableMgr::index_t i = 0; i < rows; ++i) {
-		if (anim != animFPS->GetRowName(i)) continue;
+	if (animFPS) {
+		static TableMgr::index_t rows = animFPS->GetRowCount();
+		for (TableMgr::index_t i = 0; i < rows; ++i) {
+			if (anim != animFPS->GetRowName(i)) continue;
 
-		float fps = animFPS->QueryFieldUnsigned<unsigned int>(i, 0);
-		return fps;
+			baseFPS = animFPS->QueryFieldUnsigned<unsigned int>(i, 0);
+			break;
+		}
 	}
-	return ANI_DEFAULT_FRAMERATE;
+
+	// Scale animation FPS based on game logic speed
+	return baseFPS * GetAnimationSpeedScale();
+}
+
+float Interface::GetAnimationSpeedScale() const
+{
+	// Maximum Frame Rate of 30 corresponds to default animation rate
+	// If Maximum Frame Rate is doubled, animation rate should be doubled
+	return (Time.ticksPerSec * 2.0f) / 30.0f;
 }
 
 void Interface::ApplyTooltipDelay() const
