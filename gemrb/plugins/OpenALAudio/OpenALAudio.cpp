@@ -99,6 +99,18 @@ static void ConfigureSource(ALuint source, const AudioPlaybackConfig& config)
 		sourcePos[2] = float(config.position.z);
 	}
 
+	if (config.directional) {
+		alSourcefv(source, AL_DIRECTION, config.direction.data());
+		alSourcei(source, AL_CONE_INNER_ANGLE, config.cone);
+		alSourcei(source, AL_CONE_OUTER_ANGLE, 360);
+		alSourcef(source, AL_CONE_OUTER_GAIN, 0.25f);
+#ifdef HAVE_OPENAL_EFX_H
+		if (hasEFX) {
+			alSourcef(source, AL_CONE_OUTER_GAINHF, 0.5f);
+		}
+#endif
+	}
+
 	alSourcefv(source, AL_VELOCITY, sourceVel.data());
 	alSourcei(source, AL_LOOPING, config.loop);
 	alSourcef(source, AL_GAIN, 0.0001f * (config.channelVolume * config.masterVolume));
@@ -523,7 +535,7 @@ Holder<SoundBufferHandle> OpenALBackend::LoadSound(
 	ResourceHolder<SoundMgr> resource,
 	const AudioPlaybackConfig& config)
 {
-	auto buffers = GetBuffers(resource, config.spatial);
+	auto buffers = GetBuffers(std::move(resource), config.spatial);
 	if (buffers.first == 0) {
 		return Holder<SoundBufferHandle>();
 	}

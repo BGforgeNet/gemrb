@@ -33,6 +33,7 @@ CommonTables.Load ()
 
 def GetWindowPack():
 	height = GemRB.GetSystemVariable (SV_HEIGHT)
+	width = GemRB.GetSystemVariable (SV_WIDTH)
 
 	if GameCheck.IsPST ():
 		default = "GUIWORLD"
@@ -48,14 +49,34 @@ def GetWindowPack():
 	# 3. not all games have all the window packs
 	# ... but the widescreen mod only modifies guiw08 or guiw10, not touching others
 	# luckily internally its guiw08 is in the end produced as a copy of guiw10
+	# guiw12, 16 and 20 are cut off, have bg1 graphics in places, so we skip them
 	if GameCheck.HasWideScreenMod ():
 		if GameCheck.IsBG1 () or GameCheck.IsPST ():
 			return default
 		return "GUIW10"
 	else:
-		if height >= 960 and GemRB.HasResource ("GUIW12", RES_CHU, 1):
-			return "GUIW12"
-		elif height >= 768 and GemRB.HasResource ("GUIW10", RES_CHU, 1):
+		if GameCheck.IsAnyEE ():
+			if height >= 1500 and GemRB.HasResource ("GUIW20", RES_CHU, 1):
+				return "GUIW20"
+			elif height >= 768 and width >= 1920 and GemRB.HasResource ("GUIW19", RES_CHU, 1):
+				return "GUIW19" # kinda works
+			# 800x600 again, but spaced in a larger screen and broken
+			# elif height >= 768 and width >= 1536 and GemRB.HasResource ("GUIW16", RES_CHU, 1):
+			# 	return "GUIW16"
+			elif height >= 768 and width > 1200 and GemRB.HasResource ("GUIW13", RES_CHU, 1):
+				return "GUIW13"
+			# elif height >= 768 and width > 1024 and GemRB.HasResource ("GUIW12", RES_CHU, 1):
+			# 	return "GUIW12" # misaligned message window
+			else:
+				return "GUIW10"
+			# very incomplete
+			# elif height >= 640 and GemRB.HasResource ("GUIW09", RES_CHU, 1):
+			# 	return "GUIW09"
+			# elif height >= 600 and GemRB.HasResource ("GUIW08", RES_CHU, 1):
+			# 	return "GUIW08"
+			# else:
+			# 	return default
+		if height >= 768 and GemRB.HasResource ("GUIW10", RES_CHU, 1):
 			return "GUIW10"
 		elif height >= 600 and GemRB.HasResource ("GUIW08", RES_CHU, 1):
 			return "GUIW08"
@@ -823,6 +844,13 @@ def OverrideDefaultVoiceSet (Gender, CharSound):
 			Gender2Sound = [ "", "male005", "female4" ]
 			CharSound = Gender2Sound[Gender]
 	return CharSound
+
+# sets up a relative anchor for buttons with pictures/images
+def SetButtonAnchor (button, x = 4, y = 4):
+	button.SetFlags (IE_GUI_BUTTON_ALIGN_ANCHOR, OP_OR)
+	if GameCheck.IsPST ():
+		y = 1 # inventory
+	button.SetAnchor (x, y)
 
 def BindControlCallbackParams(fn, *args):
 	return lambda ctl: fn(*args)

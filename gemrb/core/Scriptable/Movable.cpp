@@ -261,7 +261,10 @@ void Movable::DoStep(unsigned int walkScale, ieDword time)
 	bool blocksSearch = BlocksSearchMap();
 	if (actorInTheWay && blocksSearch && actorInTheWay->BlocksSearchMap()) {
 		// Give up instead of bumping if you are close to the goal
-		if (path.Size() == 1 && PersonalDistance(nmptStep, this) < MAX_OPERATING_DISTANCE) {
+		// the cut-off should be max 1 foot, so attacking with close-ranged weapons is unlikely to stop approaching too soon
+		// attacking actions already take weapon range into account when
+		// triggering movement, so this here does not mean we go needlessly close
+		if (path.Size() == 1 && WithinPersonalRange(this, nmptStep, 1)) {
 			ClearPath(true);
 			NewOrientation = Orientation;
 			// Do not call ReleaseCurrentAction() since other actions
@@ -366,16 +369,16 @@ void Movable::WalkTo(const Point& Des, int distance)
 		Log(DEBUG, "WalkTo", "{} re-pathing ignoring actors", fmt::WideToChar { actor->GetShortName() });
 		newPath = area->FindPath(Pos, Des, circleSize, distance, PF_SIGHT, actor);
 	}
+	if (BlocksSearchMap()) {
+		area->BlockSearchMapFor(this);
+	}
 
-	if (newPath) {
+	if (newPath && newPath != path) {
 		ClearPath(false);
 		path = std::move(newPath);
 		HandleAnkhegStance(false);
 	} else {
 		pathfindingDistance = std::max(circleSize, distance);
-		if (BlocksSearchMap()) {
-			area->BlockSearchMapFor(this);
-		}
 	}
 }
 
@@ -451,7 +454,7 @@ void Movable::RandomWalk(bool can_stop, bool run)
 	}
 	if (!randomStep.point.IsZero()) {
 		Destination = randomStep.point;
-		path.PrependStep(randomStep); // start or end doesn't matter, since the path is currently empty
+		path.PrependStep(std::move(randomStep)); // start or end doesn't matter, since the path is currently empty
 	} else {
 		randomWalkCounter = 0;
 		WalkTo(HomeLocation);

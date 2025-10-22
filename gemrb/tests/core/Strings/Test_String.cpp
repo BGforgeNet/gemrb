@@ -18,6 +18,7 @@
  */
 
 #include "Strings/String.h"
+#include "Strings/StringConversion.h"
 
 #include <gtest/gtest.h>
 
@@ -39,7 +40,7 @@ TEST(StringTest, FindFirstOf)
 	EXPECT_EQ(result, String::npos);
 
 	result = FindFirstOf(String { u"abc" }, StringViewT<String> { u"cd" });
-	EXPECT_EQ(result, 2);
+	EXPECT_EQ(result, size_t(2));
 
 	result = FindFirstOf(String { u"abcd" }, StringViewT<String> { u"c" }, 3);
 	EXPECT_EQ(result, String::npos);
@@ -77,13 +78,13 @@ TEST(StringTest, FindFirstNotOf)
 	EXPECT_EQ(result, String::npos);
 
 	result = FindFirstNotOf(String { u"abc" }, StringViewT<String> { u"ba" });
-	EXPECT_EQ(result, 2);
+	EXPECT_EQ(result, size_t(2));
 
 	result = FindFirstNotOf(String { u"abc" }, StringViewT<String> { u"abc" });
 	EXPECT_EQ(result, String::npos);
 
 	result = FindFirstNotOf(String { u"abc" }, StringViewT<String> { u"def" }, 1);
-	EXPECT_EQ(result, 1);
+	EXPECT_EQ(result, size_t(1));
 }
 
 TEST(StringTest, FindLastNotOf)
@@ -95,19 +96,19 @@ TEST(StringTest, FindLastNotOf)
 	EXPECT_EQ(result, static_cast<String::size_type>(-1));
 
 	result = FindLastNotOf(String { u"abc" }, StringViewT<String> {}, 5);
-	EXPECT_EQ(result, 2);
+	EXPECT_EQ(result, size_t(2));
 
 	result = FindLastNotOf(String { u"abc" }, StringViewT<String> {}, 1);
-	EXPECT_EQ(result, 1);
+	EXPECT_EQ(result, size_t(1));
 
 	result = FindLastNotOf(String { u"abc" }, StringViewT<String> { u"def" });
-	EXPECT_EQ(result, 2);
+	EXPECT_EQ(result, size_t(2));
 
 	result = FindLastNotOf(String { u"abc" }, StringViewT<String> { u"cb" });
-	EXPECT_EQ(result, 0);
+	EXPECT_EQ(result, size_t(0));
 
 	result = FindLastNotOf(String { u"abca" }, StringViewT<String> { u"cb" });
-	EXPECT_EQ(result, 3);
+	EXPECT_EQ(result, size_t(3));
 
 	result = FindLastNotOf(String { u"abc" }, StringViewT<String> { u"abc" });
 	EXPECT_EQ(result, String::npos);
@@ -116,13 +117,13 @@ TEST(StringTest, FindLastNotOf)
 TEST(StringTest, FindLastNotOfReverse)
 {
 	auto result = FindLastNotOf(String { u"abc" }, StringViewT<String> { u"def" }, String::npos, true);
-	EXPECT_EQ(result, 2);
+	EXPECT_EQ(result, size_t(2));
 
 	result = FindLastNotOf(String { u"abc" }, StringViewT<String> { u"cb" }, 0, true);
-	EXPECT_EQ(result, 0);
+	EXPECT_EQ(result, size_t(0));
 
 	result = FindLastNotOf(String { u"abca" }, StringViewT<String> { u"cb" }, 0, true);
-	EXPECT_EQ(result, 3);
+	EXPECT_EQ(result, size_t(3));
 
 	result = FindLastNotOf(String { u"abc" }, StringViewT<String> { u"abc" }, 0, true);
 	EXPECT_EQ(result, String::npos);
@@ -131,7 +132,7 @@ TEST(StringTest, FindLastNotOfReverse)
 	EXPECT_EQ(result, String::npos);
 
 	result = FindLastNotOf(String { u"abca" }, StringViewT<String> { u"cb" }, 1, true);
-	EXPECT_EQ(result, 3);
+	EXPECT_EQ(result, size_t(3));
 
 	result = FindLastNotOf(String { u"abc" }, StringViewT<String> { u"abc" }, 1, true);
 	EXPECT_EQ(result, String::npos);
@@ -323,6 +324,14 @@ TEST(StringTest, StringToUpper)
 	StringToUpper(unit2);
 	EXPECT_EQ(unit2, u"ЗАКОНЧИТЬ");
 #endif
+}
+
+TEST(StringTest, RecodedStringFromWideStringBytes)
+{
+	std::u16string original { u"abc" };
+	auto utf8 = RecodedStringFromWideStringBytes(reinterpret_cast<const char16_t*>(original.c_str()), 6, "UTF-8");
+	EXPECT_EQ(size_t(3), utf8.length());
+	EXPECT_EQ("abc", utf8);
 }
 
 }

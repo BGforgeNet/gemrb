@@ -35,6 +35,7 @@
 #include "Holder.h"
 #include "ImageMgr.h"
 #include "InterfaceConfig.h"
+#include "MoviePlayer.h"
 #include "SaveGameAREExtractor.h"
 #include "StringMgr.h"
 #include "TableMgr.h"
@@ -361,6 +362,7 @@ private:
 	AmbientMgr* ambientManager = nullptr;
 	AudioPlayback* audioPlayback = nullptr;
 	MusicLoop* musicLoop = nullptr;
+	ResourceHolder<MoviePlayer> moviePlayer;
 
 public:
 	EncodingStruct TLKEncoding;
@@ -458,7 +460,7 @@ public:
 	/** Enables/Disables the CutScene Mode */
 	void SetCutSceneMode(bool active);
 	/** returns true if in cutscene mode */
-	bool InCutSceneMode() const;
+	bool InCutSceneMode(bool checkDialog = true) const;
 	/** Updates the Game Script Engine State */
 	bool GSUpdate(bool update);
 	/** Get the Party INI Interpreter */
@@ -627,6 +629,10 @@ public:
 	static const char* GetDeathVarFormat();
 	/** Saves config variables to a file */
 	bool SaveConfig();
+	/** Checks if the cheat console is open */
+	bool IsConsoleWindowOpen() const;
+	/** Checks if we're in the middle of playing a movie */
+	bool PlayingMovie() const;
 
 private:
 	void LoadPlugins() const;

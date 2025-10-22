@@ -57,6 +57,10 @@ struct PathNode {
 	Point point;
 	orient_t orient;
 	bool waypoint = false;
+	bool operator==(const PathNode& other) const noexcept
+	{
+		return point == other.point && orient == other.orient;
+	}
 };
 
 struct Path {
@@ -65,6 +69,14 @@ struct Path {
 	using iterator = std::vector<PathNode>::iterator;
 	using const_iterator = std::vector<PathNode>::const_iterator;
 
+	bool operator==(const Path& other) const noexcept
+	{
+		return nodes == other.nodes && currentStep == other.currentStep;
+	}
+	bool operator!=(const Path& other) const noexcept
+	{
+		return !operator==(other);
+	}
 	explicit operator bool() const noexcept
 	{
 		return !nodes.empty();
@@ -104,9 +116,9 @@ struct Path {
 		nodes.push_back(std::move(step));
 		return nodes.end() - 1;
 	}
-	void PrependStep(PathNode& step)
+	void PrependStep(PathNode&& step)
 	{
-		nodes.insert(nodes.begin(), std::move(step));
+		nodes.insert(nodes.begin(), step);
 	}
 	void AppendPath(const Path& path2)
 	{
@@ -136,28 +148,6 @@ enum {
 	PF_BACKAWAY = 2,
 	PF_ACTORS_ARE_BLOCKING = 4
 };
-
-
-// Point-distance pair, used by the pathfinder's priority queue
-// to sort nodes by their (heuristic) distance from the destination
-class PQNode {
-public:
-	PQNode(Point p, float_t l)
-		: point(p), dist(l) {};
-	PQNode()
-		: point(Point(0, 0)), dist(0) {};
-
-	Point point;
-	float_t dist;
-
-	friend bool operator<(const PQNode& lhs, const PQNode& rhs) { return lhs.dist < rhs.dist; }
-	friend bool operator>(const PQNode& lhs, const PQNode& rhs) { return rhs < lhs; }
-	friend bool operator<=(const PQNode& lhs, const PQNode& rhs) { return !(lhs > rhs); }
-	friend bool operator>=(const PQNode& lhs, const PQNode& rhs) { return !(lhs < rhs); }
-	friend bool operator==(const PQNode& lhs, const PQNode& rhs) { return lhs.point == rhs.point; }
-	friend bool operator!=(const PQNode& lhs, const PQNode& rhs) { return !(lhs == rhs); }
-};
-
 }
 
 #endif

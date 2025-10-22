@@ -197,6 +197,7 @@ def SetupItemAbilities(pc, slot, only):
 				if ammoitem['Type'] == ammotype and st["Type"] == SLOT_QUIVER:
 					ammoSlotCount += 1
 					Button.SetFlags (IE_GUI_BUTTON_RADIOBUTTON | IE_GUI_BUTTON_ALIGN_BOTTOM | IE_GUI_BUTTON_ALIGN_RIGHT, OP_SET)
+					GUICommon.SetButtonAnchor (Button)
 					Button.SetSprites ("GUIBTBUT", 0, 0, 1, 3, 5)
 					Button.SetItemIcon (ammoslot['ItemResRef'])
 					Button.SetText (str(ammoslot["Usages0"]))
@@ -906,7 +907,7 @@ def ActionCastPressed ():
 		SaveActionButton (ACT_CAST)
 		return
 
-	GemRB.SetVar ("QSpell", -1)
+	GemRB.SetVar ("QSpell", None)
 	GemRB.SetVar ("TopIndex", 0)
 	SetActionLevel (UAW_SPELLS)
 	UpdateActionsWindow ()
@@ -997,7 +998,7 @@ def ActionInnatePressed ():
 		SaveActionButton (ACT_INNATE)
 		return
 
-	GemRB.SetVar ("QSpell", -1)
+	GemRB.SetVar ("QSpell", None)
 	GemRB.SetVar ("TopIndex", 0)
 	SetActionLevel (UAW_INNATES)
 	UpdateActionsWindow ()
@@ -1008,7 +1009,7 @@ def ActionInnateRightPressed ():
 		StartBarConfiguration ()
 		return
 
-	GemRB.SetVar ("QSpell", -1)
+	GemRB.SetVar ("QSpell", None)
 	GemRB.SetVar ("TopIndex", 0)
 	SetActionLevel (UAW_INNATES)
 	UpdateActionsWindow ()
@@ -1547,6 +1548,7 @@ def SetItemText (btn, charges, oneIsNone):
 	if not btn:
 		return
 
+	GUICommon.SetButtonAnchor (btn)
 	if charges and (charges > 1 or not oneIsNone):
 		btn.SetText (str(charges))
 	else:

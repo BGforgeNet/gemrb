@@ -4227,7 +4227,7 @@ void Actor::CheckCleave()
 // NOTE: only does the visual part of chunking
 static void ChunkActor(Actor* actor)
 {
-	Map* map = actor->GetCurrentArea();
+	const Map* map = actor->GetCurrentArea();
 	if (!map->IsVisible(actor->Pos)) return; // protect against ctrl-shift-y
 
 	// TODO: play chunky animation / particles #128
@@ -4365,8 +4365,9 @@ int Actor::Damage(int damage, int damagetype, Scriptable* hitter, int modtype, i
 			damage = 123456; // arbitrarily high for death; won't be displayed
 			LastDamageType |= DAMAGE_CHUNKING;
 		}
-		// chunky death when you're reduced below -10 hp
-		if ((ieDword) damage >= Modified[IE_HITPOINTS] + 10 && allowChunking) {
+		// chunky death when you're reduced below -19 hp (pc) or -8 (everyone else)
+		ieDword chunkyLimit = (BaseStats[IE_EA] == EA_PC) ? 20 : 9;
+		if ((ieDword) damage >= Modified[IE_HITPOINTS] + chunkyLimit && allowChunking) {
 			LastDamageType |= DAMAGE_CHUNKING;
 		}
 		// mark LastHitter for repeating damage effects (eg. to get xp from melfing trolls)
@@ -4879,34 +4880,34 @@ void Actor::PlaySwingSound(const WeaponInfo& wi) const
 	// TobExAL and Infinity Sounds prefer both to be played, so we match that, giving more choice to modders
 	// they override any values in the 2da, which is something GetVerbalConstantSound handles for us
 	int stance = GetStance();
-	EnumIterator<Verbal> vb(Verbal::count);
+	Verbal vb = Verbal::count;
 	switch (stance) {
 		case IE_ANI_ATTACK_SLASH:
-			vb = EnumIterator<Verbal>(Verbal::Attack1);
+			vb = Verbal::Attack1;
 			break;
 		case IE_ANI_ATTACK_BACKSLASH:
-			vb = EnumIterator<Verbal>(Verbal::Attack2);
+			vb = Verbal::Attack2;
 			break;
 		case IE_ANI_ATTACK_JAB:
-			vb = EnumIterator<Verbal>(Verbal::Attack3);
+			vb = Verbal::Attack3;
 			break;
 		case IE_ANI_SHOOT:
-			vb = EnumIterator<Verbal>(Verbal::Attack4);
+			vb = Verbal::Attack4;
 			break;
 		default:
 			Log(WARNING, "Actor", "Unknown attack stance detected ({}) for {}, not playing creature swing sound!", stance, fmt::WideToChar { LongName });
 			break;
 	}
-	if (vb != vb.end()) {
+	if (vb != Verbal::count) {
 		bool found = false;
 		// limit to once per round so high APR actors don't spam
 		if (!InParty || attackcount == attacksperround) {
-			VerbalConstant(*vb);
+			VerbalConstant(vb);
 		}
 		// retry with 2da for soundsets, since they only checked one thing
 		if (!found) {
 			ResRef sound2;
-			GetSoundFromFile(sound2, *vb);
+			GetSoundFromFile(sound2, vb);
 			if (sound != sound2) {
 				core->GetAudioPlayback().Play(sound2, AudioPreset::Spatial, SFXChannel::Swings, Pos);
 			}
@@ -6242,16 +6243,15 @@ bool Actor::ValidTarget(int ga_flags, const Scriptable* checker) const
 		}
 	}
 	if (ga_flags & GA_ONLY_BUMPABLE) {
-		// NOTE: if you add new conditions, make sure TraversabilityCache gets updated accordingly
-		if (core->GetGame()->CombatCounter) return false; // handled when TraversabilityCache is used (e.g. FindPath)
-		if (GetStat(IE_EA) >= EA_EVILCUTOFF) return false; // handled in pcf_ea
+		if (core->GetGame()->CombatCounter) return false;
+		if (GetStat(IE_EA) >= EA_EVILCUTOFF) return false;
 		// Skip sitting patrons
-		if (GetStat(IE_ANIMATION_ID) >= 0x4000 && GetStat(IE_ANIMATION_ID) <= 0x4112) return false; // ignored
-		if (IsInMovingStance()) return false; // handled in Movable::SetStanceDirect
+		if (GetStat(IE_ANIMATION_ID) >= 0x4000 && GetStat(IE_ANIMATION_ID) <= 0x4112) return false;
+		if (IsInMovingStance()) return false;
 	}
 	if (ga_flags & GA_CAN_BUMP) {
 		if (core->GetGame()->CombatCounter) return false;
-		if (!((IsPartyMember() && GetStat(IE_EA) < EA_GOODCUTOFF) || GetStat(IE_NPCBUMP))) return false;
+		if (!(GetStat(IE_EA) <= EA_CONTROLLABLE || GetStat(IE_NPCBUMP))) return false;
 	}
 	if (ga_flags & GA_BIGBAD) {
 		ieDword animID = Modified[IE_ANIMATION_ID];
@@ -6551,7 +6551,7 @@ void Actor::SetModalSpell(enum Modal state, const ResRef& spell)
 	if (spell) {
 		Modal.Spell = spell;
 	} else {
-		if (size_t(state) >= ModalStates.size) {
+		if (size_t(state) >= decltype(ModalStates)::size) {
 			Modal.Spell.Reset();
 		} else {
 			if (state == Modal::BattleSong && !BardSong.IsEmpty()) {

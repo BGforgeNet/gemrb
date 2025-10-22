@@ -42,7 +42,6 @@
 #include "KeyMap.h"
 #include "Map.h"
 #include "MapMgr.h"
-#include "MoviePlayer.h"
 #include "MusicMgr.h"
 #include "PluginLoader.h"
 #include "PluginMgr.h"
@@ -1931,6 +1930,11 @@ void Interface::AskAndExit()
 	// if askExit is 1 then we are trying to quit a second time and should instantly do so
 	ieDword askExit = vars.Get("AskAndExit", 0);
 
+	// stop any movies, since they eat up events
+	if (PlayingMovie()) {
+		moviePlayer->Stop();
+	}
+
 	if (game && !askExit) {
 		SetPause(PauseState::On);
 		vars.Set("AskAndExit", 1);
@@ -1999,10 +2003,10 @@ int Interface::LoadSymbol(const ResRef& ref)
 		}
 	}
 	if (ind != -1) {
-		symbols[ind] = s;
+		symbols[ind] = std::move(s);
 		return ind;
 	}
-	symbols.push_back(s);
+	symbols.push_back(std::move(s));
 	return (int) symbols.size() - 1;
 }
 /** Gets the index of a loaded Symbol Table, returns -1 on error */
@@ -2073,8 +2077,8 @@ int Interface::PlayMovie(const ResRef& movieRef)
 		audioPlayback->StopSpeech();
 	}
 
-	ResourceHolder<MoviePlayer> mp = gamedata->GetResourceHolder<MoviePlayer>(actualMovieRef);
-	if (!mp) {
+	moviePlayer = gamedata->GetResourceHolder<MoviePlayer>(actualMovieRef);
+	if (!moviePlayer) {
 		return -1;
 	}
 
@@ -2082,7 +2086,7 @@ int Interface::PlayMovie(const ResRef& movieRef)
 	subtitles |= vars.Get("Display Subtitles", 0) == 1; // BG2
 	subtitles |= vars.Get("Subtitles", 0) == 1; // always present
 
-	mp->EnableSubtitles(subtitles);
+	moviePlayer->EnableSubtitles(subtitles);
 
 	class IESubtitles : public MoviePlayer::SubtitleSet {
 		using FrameMap = std::map<size_t, ieStrRef>;
@@ -2135,9 +2139,9 @@ int Interface::PlayMovie(const ResRef& movieRef)
 		int b = sttable->QueryFieldSigned<int>("blue", "frame");
 
 		if (r || g || b) {
-			mp->SetSubtitles(new IESubtitles(std::move(font), sttable, Color(r, g, b, 0xff)));
+			moviePlayer->SetSubtitles(new IESubtitles(std::move(font), sttable, Color(r, g, b, 0xff)));
 		} else {
-			mp->SetSubtitles(new IESubtitles(std::move(font), sttable));
+			moviePlayer->SetSubtitles(new IESubtitles(std::move(font), sttable));
 		}
 	}
 
@@ -2147,8 +2151,11 @@ int Interface::PlayMovie(const ResRef& movieRef)
 	}
 
 	// clear whatever is currently on screen
-	const GameControl* gc = GetGameControl();
-	bool inCutScene = gc && gc->GetScreenFlags().Test(ScreenFlags::Cutscene);
+	GameControl* gc = GetGameControl();
+	bool inCutScene = false;
+	if (gc) {
+		inCutScene = gc->GetScreenFlags().Test(ScreenFlags::Cutscene);
+	}
 	SetCutSceneMode(true);
 
 	Region screen(0, 0, config.Width, config.Height);
@@ -2158,7 +2165,7 @@ int Interface::PlayMovie(const ResRef& movieRef)
 	WindowManager::CursorFeedback cur = winmgr->SetCursorFeedback(WindowManager::MOUSE_NONE);
 	winmgr->DrawWindows();
 
-	mp->Play(win);
+	moviePlayer->Play(win);
 	win->Close();
 	winmgr->SetCursorFeedback(cur);
 	// only reset if it wasn't active before we started or if there's no game yet
@@ -2377,10 +2384,14 @@ void Interface::SetCutSceneMode(bool active)
 }
 
 /** returns true if in dialogue or cutscene */
-bool Interface::InCutSceneMode() const
+bool Interface::InCutSceneMode(bool checkDialog) const
 {
 	const GameControl* gc = GetGameControl();
-	if (!gc || gc->InDialog() || gc->GetScreenFlags().Test(ScreenFlags::Cutscene)) {
+	if (!gc) return false;
+	if (gc->GetScreenFlags().Test(ScreenFlags::Cutscene)) {
+		return true;
+	}
+	if (checkDialog && gc->InDialog()) {
 		return true;
 	}
 	return false;
@@ -3346,16 +3357,16 @@ bool Interface::ResolveRandomItem(CREItem* itm) const
 		auto parts = Explode<ResRef, ResRef>(pickedItem, '*', 1);
 		ieWord diceSides;
 		bool isGold = false;
+		bool stacked = false;
 		if (parts.size() > 1) {
 			// create a stack
+			stacked = true;
 			diceSides = strtounsigned<ieWord>(parts[1].c_str(), nullptr, 10);
 		} else {
 			// gold or regular item (can have leading digits)
 			char* endptr;
 			diceSides = strtounsigned<ieWord>(parts[0].c_str(), &endptr, 10);
-			if (*endptr) {
-				diceSides = 1;
-			} else {
+			if (!*endptr) {
 				isGold = true;
 			}
 		}
@@ -3363,12 +3374,13 @@ bool Interface::ResolveRandomItem(CREItem* itm) const
 		if (isGold) {
 			itm->ItemResRef = GoldResRef;
 			itm->Usages[0] = diceSides;
+		} else if (parts[0] == "no_drop") {
+			return false;
 		} else {
 			itm->ItemResRef = parts[0];
-			if (itm->ItemResRef == "no_drop") {
-				return false;
+			if (stacked) { // at minimum iwd2 needs us to not overwrite the charges set in the creitem
+				itm->Usages[0] = RAND<ieWord>(1, diceSides);
 			}
-			itm->Usages[0] = RAND<ieWord>(1, diceSides);
 		}
 	}
 	Log(ERROR, "Interface", "Loop detected while generating random item: {}", itm->ItemResRef);
@@ -3526,7 +3538,7 @@ Holder<Sprite2D> Interface::GetScrollCursorSprite(orient_t orient, int spriteNum
 
 void Interface::DisableGameControl(bool disable) const
 {
-	if (!gamectrl) return;
+	if (!gamectrl || InCutSceneMode()) return;
 	gamectrl->SetFlags(View::IgnoreEvents, disable ? BitOp::OR : BitOp::NAND);
 }
 
@@ -4171,4 +4183,18 @@ void Interface::ApplyTooltipDelay() const
 
 	WindowManager::SetTooltipDelay(delay);
 }
+
+bool Interface::PlayingMovie() const
+{
+	if (!moviePlayer) return false;
+	return moviePlayer->IsPlaying();
+}
+
+bool Interface::IsConsoleWindowOpen() const
+{
+	const Window* consoleWin = GetWindow(0, "WIN_CON");
+	if (!consoleWin) return false;
+	return consoleWin->HasFocus();
+}
+
 }

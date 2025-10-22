@@ -72,11 +72,11 @@ class DataStreamDecryptionTest : public DataStream_Test {
 TEST_P(DataStreamReadingTest, MetaData)
 {
 	EXPECT_FALSE(stream->CheckEncrypted());
-	EXPECT_EQ(stream->GetPos(), 0);
+	EXPECT_EQ(stream->GetPos(), strpos_t(0));
 	stream->Seek(1, GEM_STREAM_START);
-	EXPECT_EQ(stream->GetPos(), 1);
+	EXPECT_EQ(stream->GetPos(), strpos_t(1));
 	stream->Seek(1, GEM_CURRENT_POS);
-	EXPECT_EQ(stream->GetPos(), 2);
+	EXPECT_EQ(stream->GetPos(), strpos_t(2));
 
 	stream->Seek(0, GEM_STREAM_END);
 	EXPECT_EQ(stream->GetPos(), stream->Size());
@@ -95,7 +95,7 @@ TEST_P(DataStreamReadingTest, ReadScalar)
 	uint32_t four;
 	auto numBytes = stream->ReadScalar<uint32_t, uint16_t>(four);
 	EXPECT_EQ(numBytes, 2);
-	EXPECT_EQ(four, 0x0201);
+	EXPECT_EQ(four, uint32_t(0x0201));
 }
 
 TEST_P(DataStreamReadingTest, ReadEnum)

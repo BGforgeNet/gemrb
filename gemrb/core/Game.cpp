@@ -2373,9 +2373,9 @@ std::string Game::dump() const
 	std::string buffer("Currently loaded areas:\n");
 
 	for (const auto& map : Maps) {
-		Log(DEBUG, "Game", "{}", map->GetScriptName());
+		AppendFormat(buffer, "{}\n", map->GetScriptName());
 	}
-	AppendFormat(buffer, "Current area: {}   Previous area: {}\n", CurrentArea, PreviousArea);
+	AppendFormat(buffer, "Current area: {}   Previous area: {}\n\n", CurrentArea, PreviousArea);
 	if (Scripts[0]) {
 		AppendFormat(buffer, "Global script: {}\n", Scripts[0]->GetName());
 	}
@@ -2540,6 +2540,7 @@ void Game::CheckAreaComment()
 	size_t offset = RAND<size_t>(1, PCs.size());
 	const Actor* pc = PCs[offset - 1];
 	static const Actor* prevPC = nullptr;
+	if (!pc) return; // defensive check if we ever switch to sparse storage
 	if (pc == prevPC && RAND(1, 10) != 1) return;
 
 	prevPC = pc;

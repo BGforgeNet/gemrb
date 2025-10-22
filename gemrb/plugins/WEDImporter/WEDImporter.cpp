@@ -137,7 +137,7 @@ int WEDImporter::AddOverlay(TileMap* tm, const Overlay* newOverlays, bool rain) 
 			}
 			str->Seek(newOverlays->TILOffset + startindex * 2, GEM_STREAM_START);
 			std::vector<ieWord> indices(count);
-			str->Read(&indices[0], count * sizeof(ieWord));
+			str->Read(indices.data(), count * sizeof(ieWord));
 
 			Tile* tile;
 			if (secondary == 0xffff) {
@@ -260,7 +260,7 @@ std::vector<ieWord> WEDImporter::GetDoorIndices(const ResRef& resref, bool& Base
 	//Reading Door Tile Cells
 	str->Seek(DoorTilesOffset + (DoorTileStart * 2), GEM_STREAM_START);
 	auto DoorTiles = std::vector<ieWord>(DoorTileCount);
-	str->Read(&DoorTiles[0], DoorTileCount * sizeof(ieWord));
+	str->Read(DoorTiles.data(), DoorTileCount * sizeof(ieWord));
 
 	BaseClosed = DoorClosed != 0;
 	return DoorTiles;
@@ -410,7 +410,7 @@ std::vector<WallPolygonGroup> WEDImporter::GetWallGroups() const
 			ieWord polyIndex = PLT[j];
 			auto wp = polygonTable[polyIndex];
 			if (wp) {
-				group.push_back(wp);
+				group.push_back(std::move(wp));
 			}
 		}
 	}

@@ -569,7 +569,7 @@ void GameControl::DrawTrackingArrows()
 	if (!trackerID) return;
 
 	const Game* game = core->GetGame();
-	Map* area = game->GetCurrentArea();
+	const Map* area = game->GetCurrentArea();
 	const Actor* actor = area->GetActorByGlobalID(trackerID);
 	if (actor) {
 		std::vector<Actor*> monsters = area->GetAllActorsInRadius(actor->Pos, GA_NO_DEAD | GA_NO_LOS | GA_NO_UNSCHEDULED, distance);
@@ -857,279 +857,278 @@ static EffectRef heal_ref = { "CurrentHPModifier", -1 };
 static EffectRef damage_ref = { "Damage", -1 };
 static EffectRef puppet_ref = { "PuppetMarker", -1 };
 
-/** Key Release Event */
-bool GameControl::OnKeyRelease(const KeyboardEvent& Key, unsigned short Mod)
+bool GameControl::OnCheatKeyRelease(const KeyboardEvent& key, unsigned short /*mod*/)
 {
+	if (!core->CheatEnabled()) return false;
+
+	Game* game = core->GetGame();
+	Map* area = game->GetCurrentArea();
+	if (!area) return false;
+
+	static std::array<uint32_t, 4> fogFlags {
+		0,
+		DEBUG_SHOW_FOG_ALL,
+		DEBUG_SHOW_FOG_INVISIBLE,
+		DEBUG_SHOW_FOG_UNEXPLORED
+	};
+	static uint32_t fogFlagIdx = 0;
+	static std::array<uint32_t, 6> wallFlags {
+		0,
+		DEBUG_SHOW_WALLS_ALL,
+		DEBUG_SHOW_DOORS_SECRET,
+		DEBUG_SHOW_DOORS_DISABLED,
+		DEBUG_SHOW_WALLS,
+		DEBUG_SHOW_WALLS_ANIM_COVER
+	};
+	static uint32_t wallFlagIdx = 0;
+	static std::array<uint32_t, 5> flags {
+		0,
+		DEBUG_SHOW_SEARCHMAP,
+		DEBUG_SHOW_MATERIALMAP,
+		DEBUG_SHOW_HEIGHTMAP,
+		DEBUG_SHOW_LIGHTMAP,
+	};
+	static uint32_t flagIdx = 0;
+
 	Point gameMousePos = GameMousePos();
 	Highlightable* over = Scriptable::As<Highlightable>(overMe);
-	Game* game = core->GetGame();
+	Actor* lastActor = area->GetActorByGlobalID(lastActorID);
 
-	//cheatkeys with ctrl-
-	if (Mod & GEM_MOD_CTRL) {
-		if (!core->CheatEnabled()) {
-			return false;
-		}
-		Map* area = game->GetCurrentArea();
-		if (!area)
-			return false;
-		Actor* lastActor = area->GetActorByGlobalID(lastActorID);
-		switch (Key.character) {
-			case 'a': //switches through the avatar animations
-				if (lastActor) {
-					lastActor->GetNextAnimation();
-				}
-				break;
-			// b
-			case 'c': //force cast a hardcoded spell
-				//caster is the last selected actor
-				//target is the door/actor currently under the pointer
-				if (!game->selected.empty()) {
-					Actor* src = game->selected[0];
-					Scriptable* target = GetHoverObject();
-					if (target) {
-						src->SetSpellResRef(TestSpell);
-						src->CastSpell(target, false);
-						if (src->objects.LastSpellTarget) {
-							src->CastSpellEnd(0, false);
-						} else {
-							src->CastSpellPointEnd(0, false);
-						}
-					}
-				}
-				break;
-			case 'd': //detect a trap or door
-				if (over) {
-					if (overMe->Type == ST_DOOR) Scriptable::As<Door>(overMe)->TryDetectSecret(256, lastActorID);
-					over->DetectTrap(256, lastActorID);
-				}
-				break;
-			case 'e': // reverses pc order (useful for parties bigger than 6)
-				game->ReversePCs();
-				break;
-			// f
-			case 'g': //shows loaded areas and other game information
-				fmt::println("{}", game->dump());
-				break;
-			// h
-			case 'i': //interact trigger (from the original game)
-				if (!lastActor) {
-					lastActor = area->GetActor(gameMousePos, GA_DEFAULT);
-				}
-				if (lastActor && !(lastActor->GetStat(IE_MC_FLAGS) & MC_EXPORTABLE)) {
-					int size = game->GetPartySize(true);
-					if (size < 2 || lastActor->GetCurrentArea() != area) break;
-					for (int i = core->Roll(1, size, 0); i < 2 * size; i++) {
-						const Actor* target = game->GetPC(i % size, true);
-						if (target == lastActor) continue;
-						if (target->GetStat(IE_MC_FLAGS) & MC_EXPORTABLE) continue; //not NPC
-						lastActor->HandleInteractV1(target);
-						break;
-					}
-				}
-				break;
-			case 'j': //teleports the selected actors
-				for (Actor* selectee : game->selected) {
-					selectee->ClearActions();
-					MoveBetweenAreasCore(selectee, core->GetGame()->CurrentArea, gameMousePos, -1, true);
-				}
-				break;
-			case 'k': //kicks out actor
-				if (lastActor && lastActor->InParty) {
-					lastActor->Stop();
-					lastActor->AddAction("LeaveParty()");
-				}
-				break;
-			case 'l': //play an animation (vvc/bam) over an actor
-				//the original engine was able to swap through all animations
-				if (lastActor) {
-					lastActor->AddAnimation(ResRef("S056ICBL"), 0, 0, 0);
-				}
-				break;
-			case 'M':
-				DumpActorInfo(ActorDump::Anims, area);
-				FlushLogs();
-				break;
-			case 'm': //prints a debug dump (ctrl-m in the original game too)
-				if (overMe && overMe->Type != ST_ACTOR) {
-					fmt::println("{}", overMe->dump());
-				} else if (lastActor) {
-					DumpActorInfo(ActorDump::Stats, area);
+	switch (key.character) {
+		case 'a': // switches through the avatar animations
+			if (lastActor) {
+				lastActor->GetNextAnimation();
+			}
+			break;
+		// b
+		case 'c': // force cast a hardcoded spell
+			// caster is the last selected actor
+			// target is the door/actor currently under the pointer
+			if (game->selected.empty()) break;
+
+			if (GetHoverObject()) {
+				Actor* src = game->selected[0];
+				src->SetSpellResRef(TestSpell);
+				src->CastSpell(GetHoverObject(), false);
+				if (src->objects.LastSpellTarget) {
+					src->CastSpellEnd(0, false);
 				} else {
-					area->dump(false);
+					src->CastSpellPointEnd(0, false);
 				}
-				FlushLogs();
-				break;
-			case 'n': //prints a list of all the live actors in the area
-				area->dump(true);
-				FlushLogs();
-				break;
-			// o
-			case 'p': //center on actor
-				screenFlags.Flip(ScreenFlags::CenterOnActor);
-				screenFlags.Flip(ScreenFlags::AlwaysCenter);
-				break;
-			case 'q': //joins actor to the party
-				if (lastActor && !lastActor->InParty) {
-					lastActor->Stop();
-					lastActor->AddAction("JoinParty()");
+			}
+			break;
+		case 'd': // detect a trap or door
+			if (over) {
+				if (overMe->Type == ST_DOOR) {
+					Scriptable::As<Door>(overMe)->TryDetectSecret(256, lastActorID);
 				}
+				over->DetectTrap(256, lastActorID);
+			}
+			break;
+		case 'e': // reverses pc order (useful for parties bigger than 6)
+			game->ReversePCs();
+			break;
+		// f
+		case 'g': // shows loaded areas and other game information
+			Log(DEBUG, "Game", "{}", game->dump());
+			break;
+		// h
+		case 'i': // interact trigger (from the original game)
+			if (!lastActor) {
+				lastActor = area->GetActor(gameMousePos, GA_DEFAULT);
+				if (!lastActor) break;
+			}
+			if (lastActor->GetStat(IE_MC_FLAGS) & MC_EXPORTABLE || lastActor->GetCurrentArea() != area) {
 				break;
-			case 'r': //resurrects actor
-				if (!lastActor) {
-					lastActor = area->GetActor(gameMousePos, GA_DEFAULT);
+			}
+			int size;
+			size = game->GetPartySize(true);
+			if (size < 2) break;
+			for (int i = core->Roll(1, size, 0); i < 2 * size; i++) {
+				const Actor* target = game->GetPC(i % size, true);
+				if (target == lastActor) continue;
+				if (target->GetStat(IE_MC_FLAGS) & MC_EXPORTABLE) continue; // user generated pc
+				lastActor->HandleInteractV1(target);
+				break;
+			}
+			break;
+		case 'j': // teleports the selected actors
+			for (Actor* selectee : game->selected) {
+				selectee->ClearActions();
+				MoveBetweenAreasCore(selectee, core->GetGame()->CurrentArea, gameMousePos, -1, true);
+			}
+			break;
+		case 'k': // kicks out actor
+			if (lastActor && lastActor->InParty) {
+				lastActor->Stop();
+				lastActor->AddAction("LeaveParty()");
+			}
+			break;
+		case 'l': // play an animation (vvc/bam) over an actor
+			// the original engine was able to swap through all animations
+			if (lastActor) {
+				lastActor->AddAnimation(ResRef("S056ICBL"), 0, 0, 0);
+			}
+			break;
+		case 'M':
+			DumpActorInfo(ActorDump::Anims, area);
+			FlushLogs();
+			break;
+		case 'm': // prints a debug dump (ctrl-m in the original game too)
+			if (overMe && overMe->Type != ST_ACTOR) {
+				fmt::println("{}", overMe->dump());
+			} else if (lastActor) {
+				DumpActorInfo(ActorDump::Stats, area);
+			} else {
+				area->dump(false);
+			}
+			FlushLogs();
+			break;
+		case 'n': // prints a list of all the live actors in the area
+			area->dump(true);
+			FlushLogs();
+			break;
+		// o
+		case 'p': // center on actor
+			screenFlags.Flip(ScreenFlags::CenterOnActor);
+			screenFlags.Flip(ScreenFlags::AlwaysCenter);
+			break;
+		case 'q': // joins actor to the party
+			if (lastActor && !lastActor->InParty) {
+				lastActor->Stop();
+				lastActor->AddAction("JoinParty()");
+			}
+			break;
+		case 'r': // resurrects actor
+			if (!lastActor) {
+				lastActor = area->GetActor(gameMousePos, GA_DEFAULT);
+			}
+			if (lastActor) {
+				Effect* fx = EffectQueue::CreateEffect(heal_ref, lastActor->GetStat(IE_MAXHITPOINTS), 0x30001, FX_DURATION_INSTANT_PERMANENT);
+				if (fx) {
+					core->ApplyEffect(fx, lastActor, lastActor);
 				}
-				if (lastActor) {
-					Effect* fx = EffectQueue::CreateEffect(heal_ref, lastActor->GetStat(IE_MAXHITPOINTS), 0x30001, FX_DURATION_INSTANT_PERMANENT);
-					if (fx) {
-						core->ApplyEffect(fx, lastActor, lastActor);
-					}
+			}
+			break;
+		case 's': // switches through the stance animations
+			if (lastActor) {
+				lastActor->GetNextStance();
+			}
+			break;
+		case 't': // advances time by 1 hour
+			game->AdvanceTime(core->Time.hour_size);
+			//refresh gui here once we got it
+			break;
+		case 'u': // dump GameScript GLOBAL vars
+			PrintCollection("locals", core->GetGame()->locals);
+			break;
+		case 'U': // dump death vars
+			PrintCollection("kaputz", core->GetGame()->kaputz);
+			break;
+		case 'V': // dump GemRB vars like the game ini settings
+			PrintCollection("variables", core->GetDictionary());
+			break;
+		case 'v': // marks some of the map visited (random vision distance)
+			area->ExploreMapChunk(SearchmapPoint(gameMousePos), RAND(0, 29), 1);
+			break;
+		case 'w': // consolidates found ground piles under the pointed pc
+			area->MoveVisibleGroundPiles(gameMousePos);
+			break;
+		case 'x': // shows coordinates on the map
+			fmt::println("{}: {}", area->GetScriptName(), gameMousePos);
+			break;
+		case 'Y': // damages all enemies by 300 (resistances apply)
+			// mwahaha!
+			int i;
+			i = area->GetActorCount(false);
+			while (i--) {
+				Actor* victim = area->GetActor(i, false);
+				if (victim->Modified[IE_EA] == EA_ENEMY) {
+					Effect* newfx = EffectQueue::CreateEffect(damage_ref, 300, DAMAGE_MAGIC << 16, FX_DURATION_INSTANT_PERMANENT);
+					core->ApplyEffect(newfx, victim, victim);
 				}
-				break;
-			case 's': //switches through the stance animations
-				if (lastActor) {
-					lastActor->GetNextStance();
-				}
-				break;
-			case 't': // advances time by 1 hour
-				game->AdvanceTime(core->Time.hour_size);
-				//refresh gui here once we got it
-				break;
-			case 'u': // dump GameScript GLOBAL vars
-				PrintCollection("locals", core->GetGame()->locals);
-				break;
-			case 'U': // dump death vars
-				PrintCollection("kaputz", core->GetGame()->kaputz);
-				break;
-			case 'V': // dump GemRB vars like the game ini settings
-				PrintCollection("variables", core->GetDictionary());
-				break;
-			case 'v': //marks some of the map visited (random vision distance)
-				area->ExploreMapChunk(SearchmapPoint(gameMousePos), RAND(0, 29), 1);
-				break;
-			case 'w': // consolidates found ground piles under the pointed pc
-				area->MoveVisibleGroundPiles(gameMousePos);
-				break;
-			case 'x': // shows coordinates on the map
-				fmt::println("{}: {}", area->GetScriptName(), gameMousePos);
-				break;
-			case 'Y': // damages all enemies by 300 (resistances apply)
-				// mwahaha!
-				{
-					int i = area->GetActorCount(false);
-					while (i--) {
-						Actor* victim = area->GetActor(i, false);
-						if (victim->Modified[IE_EA] == EA_ENEMY) {
-							Effect* newfx = EffectQueue::CreateEffect(damage_ref, 300, DAMAGE_MAGIC << 16, FX_DURATION_INSTANT_PERMANENT);
-							core->ApplyEffect(newfx, victim, victim);
-						}
-					}
-				}
-				// fallthrough
-			case 'y': //kills actor
-				if (lastActor) {
-					//using action so the actor is killed
-					//correctly (synchronisation)
-					lastActor->Stop();
+			}
+			// fallthrough
+		case 'y': // kills actor
+			if (lastActor) {
+				// using action so the actor is killed
+				// correctly (synchronisation)
+				lastActor->Stop();
 
-					Effect* newfx;
-					newfx = EffectQueue::CreateEffect(damage_ref, 300, DAMAGE_MAGIC << 16, FX_DURATION_INSTANT_PERMANENT);
+				Effect* newfx;
+				newfx = EffectQueue::CreateEffect(damage_ref, 300, DAMAGE_MAGIC << 16, FX_DURATION_INSTANT_PERMANENT);
+				core->ApplyEffect(newfx, lastActor, lastActor);
+				if (!(lastActor->GetInternalFlag() & IF_REALLYDIED)) {
+					newfx = EffectQueue::CreateEffect(damage_ref, 300, DAMAGE_ACID << 16, FX_DURATION_INSTANT_PERMANENT);
 					core->ApplyEffect(newfx, lastActor, lastActor);
-					if (!(lastActor->GetInternalFlag() & IF_REALLYDIED)) {
-						newfx = EffectQueue::CreateEffect(damage_ref, 300, DAMAGE_ACID << 16, FX_DURATION_INSTANT_PERMANENT);
-						core->ApplyEffect(newfx, lastActor, lastActor);
-						newfx = EffectQueue::CreateEffect(damage_ref, 300, DAMAGE_CRUSHING << 16, FX_DURATION_INSTANT_PERMANENT);
-						core->ApplyEffect(newfx, lastActor, lastActor);
-					}
-				} else if (!overMe) {
-					break;
-				} else if (overMe->Type == ST_CONTAINER) {
-					Scriptable::As<Container>(overMe)->SetContainerLocked(false);
-				} else if (overMe->Type == ST_DOOR) {
-					Scriptable::As<Door>(overMe)->SetDoorLocked(0, 0);
+					newfx = EffectQueue::CreateEffect(damage_ref, 300, DAMAGE_CRUSHING << 16, FX_DURATION_INSTANT_PERMANENT);
+					core->ApplyEffect(newfx, lastActor, lastActor);
 				}
+			} else if (!overMe) {
 				break;
-			case 'z': //shift through the avatar animations backward
-				if (lastActor) {
-					lastActor->GetPrevAnimation();
-				}
-				break;
-			case '1': //change paperdoll armour level
-				if (!lastActor)
-					break;
-				lastActor->NewStat(IE_ARMOR_TYPE, 1, MOD_ADDITIVE);
-				break;
-			case '4': //show all traps and infopoints
-				DebugFlags ^= DEBUG_SHOW_INFOPOINTS;
-				Log(MESSAGE, "GameControl", "Show traps and infopoints {}", DebugFlags & DEBUG_SHOW_INFOPOINTS ? "ON" : "OFF");
-				break;
-			case '5':
-				{
-					static std::array<uint32_t, 6> wallFlags {
-						0,
-						DEBUG_SHOW_WALLS_ALL,
-						DEBUG_SHOW_DOORS_SECRET,
-						DEBUG_SHOW_DOORS_DISABLED,
-						DEBUG_SHOW_WALLS,
-						DEBUG_SHOW_WALLS_ANIM_COVER
-					};
-					static uint32_t flagIdx = 0;
-					DebugFlags &= ~DEBUG_SHOW_WALLS_ALL;
-					DebugFlags |= wallFlags[flagIdx++];
-					flagIdx = flagIdx % wallFlags.size();
-				}
-				break;
-			case '6': //toggle between lightmap/heightmap/material/search
-				{
-					constexpr int flagCnt = 5;
-					static uint32_t flags[flagCnt] {
-						0,
-						DEBUG_SHOW_SEARCHMAP,
-						DEBUG_SHOW_MATERIALMAP,
-						DEBUG_SHOW_HEIGHTMAP,
-						DEBUG_SHOW_LIGHTMAP,
-					};
-					constexpr uint32_t mask = (DEBUG_SHOW_LIGHTMAP | DEBUG_SHOW_HEIGHTMAP | DEBUG_SHOW_MATERIALMAP | DEBUG_SHOW_SEARCHMAP);
+			} else if (overMe->Type == ST_CONTAINER) {
+				Scriptable::As<Container>(overMe)->SetContainerLocked(false);
+			} else if (overMe->Type == ST_DOOR) {
+				Scriptable::As<Door>(overMe)->SetDoorLocked(0, 0);
+			}
+			break;
+		case 'z': // shift through the avatar animations backward
+			if (lastActor) {
+				lastActor->GetPrevAnimation();
+			}
+			break;
+		case '1': // change paperdoll armour level
+			if (!lastActor) break;
+			lastActor->NewStat(IE_ARMOR_TYPE, 1, MOD_ADDITIVE);
+			break;
+		case '4': // show all traps and infopoints
+			DebugFlags ^= DEBUG_SHOW_INFOPOINTS;
+			Log(MESSAGE, "GameControl", "Show traps and infopoints {}", DebugFlags & DEBUG_SHOW_INFOPOINTS ? "ON" : "OFF");
+			break;
+		case '5':
+			DebugFlags &= ~DEBUG_SHOW_WALLS_ALL;
+			DebugFlags |= wallFlags[wallFlagIdx];
+			wallFlagIdx = (wallFlagIdx + 1) % wallFlags.size();
+			break;
+		case '6': // toggle between lightmap/heightmap/material/search
+			DebugFlags &= ~DEBUG_SHOW_MAPS_ALL;
+			DebugFlags |= flags[flagIdx];
+			flagIdx = (flagIdx + 1) % flags.size();
 
-					static uint32_t flagIdx = 0;
-					DebugFlags &= ~mask;
-					DebugFlags |= flags[flagIdx++];
-					flagIdx = flagIdx % flagCnt;
-
-					if (DebugFlags & mask) {
-						// fog interferese with debugging the map
-						// you can manually reenable with ctrl+7
-						DebugFlags |= DEBUG_SHOW_FOG_ALL;
-					} else {
-						DebugFlags &= ~DEBUG_SHOW_FOG_ALL;
-						DebugPropVal = 0;
-					}
-				}
-				break;
-			case '7': //toggles fog of war
-				{
-					constexpr int flagCnt = 4;
-					static uint32_t fogFlags[flagCnt] {
-						0,
-						DEBUG_SHOW_FOG_ALL,
-						DEBUG_SHOW_FOG_INVISIBLE,
-						DEBUG_SHOW_FOG_UNEXPLORED
-					};
-					static uint32_t flagIdx = 0;
-
-					DebugFlags &= ~DEBUG_SHOW_FOG_ALL;
-					DebugFlags |= fogFlags[flagIdx++];
-					flagIdx = flagIdx % flagCnt;
-				}
-				break;
-		}
-		return true; //return from cheatkeys
+			if (DebugFlags & DEBUG_SHOW_MAPS_ALL) {
+				// fog interferese with debugging the map
+				// you can manually reenable with ctrl+7
+				DebugFlags |= DEBUG_SHOW_FOG_ALL;
+			} else {
+				DebugFlags &= ~DEBUG_SHOW_FOG_ALL;
+				DebugPropVal = 0;
+			}
+			break;
+		case '7': // toggles fog of war
+			DebugFlags &= ~DEBUG_SHOW_FOG_ALL;
+			DebugFlags |= fogFlags[fogFlagIdx];
+			fogFlagIdx = (fogFlagIdx + 1) % fogFlags.size();
+			break;
+		default:
+			break;
 	}
 
-	switch (Key.keycode) {
+	// always consume the event regardless if a key matched or not
+	return true;
+}
+
+/** Key Release Event */
+bool GameControl::OnKeyRelease(const KeyboardEvent& key, unsigned short mod)
+{
+	if (mod & GEM_MOD_CTRL) {
+		return OnCheatKeyRelease(key, mod);
+	}
+
+	switch (key.keycode) {
 			//FIXME: move these to guiscript
 		case GEM_TAB: // remove overhead partymember hp/maxhp
-			for (int pm = 0; pm < game->GetPartySize(false); pm++) {
-				Actor* pc = game->GetPC(pm, true);
+			for (int pm = 0; pm < core->GetGame()->GetPartySize(false); pm++) {
+				Actor* pc = core->GetGame()->GetPC(pm, true);
 				if (!pc) continue;
 				pc->overHead.Display(false, 0);
 			}
@@ -1138,21 +1137,21 @@ bool GameControl::OnKeyRelease(const KeyboardEvent& Key, unsigned short Mod)
 		case GEM_DOWN:
 		case GEM_LEFT:
 		case GEM_RIGHT:
-			{
-				unsigned int releasedKey = 1 << (Key.keycode - GEM_LEFT);
-				scrollKeysDown &= ~releasedKey;
-				scrollKeysActive &= ~releasedKey;
+			unsigned int releasedKey;
+			releasedKey = 1 << (key.keycode - GEM_LEFT);
+			scrollKeysDown &= ~releasedKey;
+			scrollKeysActive &= ~releasedKey;
 
-				// If the opposite arrow key is still held down, switch to that direction:
-				unsigned int oppositeKey = releasedKey & 1 ? releasedKey << 1 : releasedKey >> 1;
-				if (scrollKeysDown & oppositeKey) {
-					scrollKeysActive |= oppositeKey;
-				}
-
-				// Update the vector to stop scrolling in the direction that was released:
-				ApplyKeyScrolling();
-				break;
+			// If the opposite arrow key is still held down, switch to that direction:
+			unsigned int oppositeKey;
+			oppositeKey = releasedKey & 1 ? releasedKey << 1 : releasedKey >> 1;
+			if (scrollKeysDown & oppositeKey) {
+				scrollKeysActive |= oppositeKey;
 			}
+
+			// Update the vector to stop scrolling in the direction that was released:
+			ApplyKeyScrolling();
+			break;
 		default:
 			return false;
 	}
@@ -1643,13 +1642,8 @@ bool GameControl::OnGlobalMouseMove(const Event& e)
 		return false;
 	}
 
-#define SCROLL_AREA_WIDTH 5
 	Region mask = frame;
-	mask.x += SCROLL_AREA_WIDTH;
-	mask.y += SCROLL_AREA_WIDTH;
-	mask.w -= SCROLL_AREA_WIDTH * 2;
-	mask.h -= SCROLL_AREA_WIDTH * 2;
-#undef SCROLL_AREA_WIDTH
+	mask.ExpandAllSides(-1 * core->config.EdgeScrollOffset);
 
 	screenMousePos = e.mouse.Pos();
 	Point mp = ConvertPointFromScreen(screenMousePos);
@@ -1696,9 +1690,22 @@ bool GameControl::MoveViewportTo(Point p, bool center, int speed)
 {
 	const Map* area = CurrentArea();
 	bool canMove = area != nullptr;
+	int mwinh = 0;
+
+	if (center || (!(updateVPTimer && speed) && canMove && p != vpOrigin)) {
+		const TextArea* mta = core->GetMessageTextArea();
+		if (mta) {
+			mwinh = mta->GetWindow()->Frame().h;
+		}
+	}
 
 	if (updateVPTimer && speed) {
 		updateVPTimer = false;
+		if (center) {
+			// also account for message window height, since it can cover the center of the window at lowest resolutions
+			// GlobalTimer does its own centering, so we only offset
+			p.y += mwinh;
+		}
 		core->timer.SetMoveViewPort(p, speed, center);
 	} else if (canMove && p != vpOrigin) {
 		updateVPTimer = true;
@@ -1706,6 +1713,7 @@ bool GameControl::MoveViewportTo(Point p, bool center, int speed)
 		Size mapsize = area->GetSize();
 
 		if (center) {
+			// should we account for the message window height here too?
 			p.x -= frame.w / 2;
 			p.y -= frame.h / 2;
 		}
@@ -1720,12 +1728,6 @@ bool GameControl::MoveViewportTo(Point p, bool center, int speed)
 		} else if (p.x < -64) {
 			p.x = -64;
 			canMove = false;
-		}
-
-		int mwinh = 0;
-		const TextArea* mta = core->GetMessageTextArea();
-		if (mta) {
-			mwinh = mta->GetWindow()->Frame().h;
 		}
 
 		constexpr int padding = 50;

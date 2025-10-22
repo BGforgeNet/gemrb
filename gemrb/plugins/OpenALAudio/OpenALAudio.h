@@ -20,7 +20,9 @@
 #ifndef H_OPENAL_AUDIO
 #define H_OPENAL_AUDIO
 
-#include "config.h"
+#ifdef HAVE_CONFIG_H
+	#include "config.h"
+#endif
 
 #include <utility>
 
@@ -74,7 +76,7 @@ public:
 private:
 	AudioBufferFormat lastFormat;
 	ALPair sources;
-	int channelVolume;
+	int channelVolume = 0;
 };
 
 class OpenALSoundStreamHandle : public SoundStreamSourceHandle {

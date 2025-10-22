@@ -301,6 +301,7 @@ enum MAP_DEBUG_FLAGS : uint32_t {
 	DEBUG_SHOW_MATERIALMAP = 0x40,
 	DEBUG_SHOW_HEIGHTMAP = 0x80,
 	DEBUG_SHOW_LIGHTMAP = 0x0100,
+	DEBUG_SHOW_MAPS_ALL = (DEBUG_SHOW_LIGHTMAP | DEBUG_SHOW_HEIGHTMAP | DEBUG_SHOW_MATERIALMAP | DEBUG_SHOW_SEARCHMAP),
 	DEBUG_SHOW_WALLS = 0x0200,
 	DEBUG_SHOW_WALLS_ANIM_COVER = 0x0400,
 	DEBUG_SHOW_WALLS_ALL = (DEBUG_SHOW_WALLS | DEBUG_SHOW_WALLS_ANIM_COVER),
@@ -529,6 +530,17 @@ public:
 	PathMapFlags GetBlocked(const NavmapPoint&) const;
 	PathMapFlags GetBlocked(const NavmapPoint&, int size) const;
 	PathMapFlags GetBlockedTile(const SearchmapPoint&) const;
+
+	// helper function used when the size > 2
+	PathMapFlags GetChildBlockedStatusForBigSize(const SearchmapPoint& smptChild, const unsigned int size) const
+	{
+		return GetBlockedInRadiusTile(smptChild, size);
+	}
+	// helper function used when the size <= 2
+	PathMapFlags GetChildBlockedStatusForSmallSize(const SearchmapPoint& smptChild, const unsigned int /* size */) const
+	{
+		return GetBlockedTile(smptChild);
+	}
 	Scriptable* GetScriptableByGlobalID(ieDword objectID);
 	Door* GetDoorByGlobalID(ieDword objectID) const;
 	Container* GetContainerByGlobalID(ieDword objectID) const;

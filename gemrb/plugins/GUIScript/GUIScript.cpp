@@ -88,9 +88,6 @@ GUIScript* GemRB::gs = NULL;
 //bit used in SetCreatureStat to access some fields
 #define EXTRASETTINGS 0x1000
 
-//maximum distance for passing items between two characters
-#define MAX_DISTANCE 500
-
 struct UsedItemType {
 	ResRef itemname;
 	ieVariable username; //death variable
@@ -2737,7 +2734,7 @@ static PyObject* GemRB_AddNewArea(PyObject* /*self*/, PyObject* args)
 
 			size_t areaIndex;
 			const WMPAreaEntry* oarea = wmap->GetArea(larea, areaIndex);
-			if (!oarea) {
+			if (!oarea || linktodir == WMPDirection::count) {
 				//blabla
 				return RuntimeError("cannot establish area link!");
 			}
@@ -3912,6 +3909,8 @@ static PyObject* GemRB_SetToken(PyObject* /*self*/, PyObject* args)
 	Py_RETURN_NONE;
 }
 
+constexpr int32_t Py_NoneAsInt = -12345; // unlikely magic number
+
 PyDoc_STRVAR(GemRB_SetVar__doc,
 	     "===== SetVar =====\n\
 \n\
@@ -3947,9 +3946,9 @@ static PyObject* GemRB_SetVar(PyObject* /*self*/, PyObject* args)
 	PyObject* pynum = nullptr;
 	PARSE_ARGS(args, "OO", &Variable, &pynum);
 
-	Control::value_t val = Control::INVALID_VALUE;
+	int32_t val = Py_NoneAsInt; // matching type contained by variables_t
 	if (PyLong_Check(pynum)) {
-		val = Control::value_t(PyLong_AsUnsignedLongMask(pynum));
+		val = static_cast<int32_t>(PyLong_AsUnsignedLongMask(pynum));
 		if (PyErr_Occurred()) { // PyLong_AsUnsignedLongMask returns -1 on error
 			PyErr_Print();
 		}
@@ -4044,11 +4043,12 @@ static PyObject* GemRB_GetVar(PyObject* /*self*/, PyObject* args)
 	PyObject* Variable;
 	PARSE_ARGS(args, "O", &Variable);
 
-	int32_t value = core->GetDictionary().Get(PyString_AsStringView(Variable), -1);
-	if (value == -1) {
+	auto varName = PyString_AsStringView(Variable);
+	// we return None for both missing keys and for None itself
+	int32_t value = core->GetDictionary().Get(varName, Py_NoneAsInt);
+	if (value == Py_NoneAsInt) {
 		Py_RETURN_NONE;
 	}
-
 	return PyLong_FromLong(value);
 }
 
@@ -4601,26 +4601,39 @@ static PyObject* GemRB_TextArea_ListResources(PyObject* self, PyObject* args)
 	dirit.SetFlags(itflags, true);
 
 	std::vector<String> strings;
-	if (dirit) {
-		do {
-			const path_t& name = dirit.GetName();
-			if (name[0] == '.' || dirit.IsDirectory() != dirs)
-				continue;
-
-			String string = StringFromUtf8(name.c_str());
-
-			if (dirs == false) {
-				size_t pos = string.find_last_of(u'.');
-				if (pos == String::npos || (type == DIRECTORY_CHR_SOUNDS && pos-- == 0)) {
-					continue;
-				}
-				string.resize(pos);
-			}
-			strings.emplace_back(std::move(string));
-		} while (++dirit);
+	std::vector<SelectOption> TAOptions;
+	if (!dirit) {
+		ta->SetSelectOptions(TAOptions, false);
+		return MakePyList<const String&, PyString_FromStringObj>(strings);
 	}
 
-	std::vector<SelectOption> TAOptions;
+	do {
+		const path_t& name = dirit.GetName();
+		if (name[0] == '.' || dirit.IsDirectory() != dirs) {
+			continue;
+		}
+
+		String string = StringFromUtf8(name.c_str());
+		if (dirs) {
+			strings.emplace_back(std::move(string));
+			continue;
+		}
+
+		size_t pos = string.find_last_of(u'.');
+		if (pos == String::npos) {
+			continue;
+		}
+		if (type == DIRECTORY_CHR_SOUNDS) {
+			if (pos == 0) {
+				continue;
+			} else {
+				--pos;
+			}
+		}
+		string.resize(pos);
+		strings.emplace_back(std::move(string));
+	} while (++dirit);
+
 	std::sort(strings.begin(), strings.end());
 	for (size_t i = 0; i < strings.size(); i++) {
 		TAOptions.emplace_back(i, strings[i]);
@@ -6326,7 +6339,7 @@ static PyObject* SetSpellIcon(Button* btn, const ResRef& SpellResRef, int type, 
 	ABORT_IF_NULL(btn);
 
 	if (SpellResRef.IsEmpty()) {
-		btn->SetPicture(NULL);
+		btn->SetPicture(nullptr);
 		//no incref here!
 		return Py_None;
 	}
@@ -6349,14 +6362,16 @@ static PyObject* SetSpellIcon(Button* btn, const ResRef& SpellResRef, int type, 
 	if (!af) {
 		return RuntimeError(fmt::format("{} BAM not found", iconResRef));
 	}
-	//small difference between pst and others
-	if (af->GetCycleSize(0) != 4) { //non-pst
-		btn->SetPicture(af->GetFrame(0, 0));
-	} else { //pst
+	// small difference: pst has a other frames in cycle 0, no cycle 1
+	// others (mostly?) only have the same frame in cycle 0 and 1
+	// so we overlay a picture for others and replace the button bam for pst
+	if (af->GetCycleSize(0) == 4) { // pst
 		btn->SetImage(ButtonImage::Unpressed, af->GetFrame(0, 0));
 		btn->SetImage(ButtonImage::Pressed, af->GetFrame(1, 0));
 		btn->SetImage(ButtonImage::Selected, af->GetFrame(2, 0));
 		btn->SetImage(ButtonImage::Disabled, af->GetFrame(3, 0));
+	} else {
+		btn->SetPicture(af->GetFrame(0, 0));
 	}
 	if (tooltip) {
 		SetViewTooltipFromRef(btn, spell->SpellName);
@@ -7843,7 +7858,7 @@ static PyObject* GemRB_ExecuteString(PyObject* /*self*/, PyObject* args)
 PyDoc_STRVAR(GemRB_EvaluateString__doc,
 	     "===== EvaluateString =====\n\
 \n\
-**Prototype:** GemRB.EvaluateString (String)\n\
+**Prototype:** GemRB.EvaluateString (String[, quiet=False])\n\
 \n\
 **Description:** Evaluates an ingame script trigger in the current area \n\
 script context. It prints the result. The command is more useful from the \n\
@@ -7851,8 +7866,13 @@ ingame debug console than from scripts.\n\
 \n\
 **Parameters:**\n\
   * String - a gamescript trigger\n\
+  * quiet - set to True to skip printing the result\n\
 \n\
-**Return value:** N/A (the trigger's return value is printed)\n\
+**Return value:** the trigger's return value\n\
+\n\
+**Examples:**\n\
+\n\
+GemRB.EvaluateString('HPPercentLT(Player1, 20)', True)\n\
 \n\
 **See also:** [ExecuteString](ExecuteString.md)\n\
 ");
@@ -7860,15 +7880,17 @@ ingame debug console than from scripts.\n\
 static PyObject* GemRB_EvaluateString(PyObject* /*self*/, PyObject* args)
 {
 	const char* String;
-	PARSE_ARGS(args, "s", &String);
+	int quiet = 0;
+	PARSE_ARGS(args, "s|p", &String, &quiet);
 	GET_GAME();
 
 	if (GameScript::EvaluateString(game->GetCurrentArea(), String)) {
-		Log(DEBUG, "GUIScript", "{} returned True", String);
+		if (!quiet) Log(DEBUG, "GUIScript", "{} returned True", String);
+		Py_RETURN_TRUE;
 	} else {
-		Log(DEBUG, "GUIScript", "{} returned False", String);
+		if (!quiet) Log(DEBUG, "GUIScript", "{} returned False", String);
+		Py_RETURN_FALSE;
 	}
-	Py_RETURN_NONE;
 }
 
 PyDoc_STRVAR(GemRB_UpdateVolume__doc,
@@ -9398,10 +9420,11 @@ static PyObject* GemRB_DropDraggedItem(PyObject* /*self*/, PyObject* args)
 	}
 
 	// too far away?
+	constexpr unsigned int maxPassingDistance = 500; // verified in game
 	const Actor* current = game->FindPC(game->GetSelectedPCSingle());
 	if (current && current != actor &&
 	    (actor->GetCurrentArea() != current->GetCurrentArea() ||
-	     SquaredPersonalDistance(actor, current) > MAX_DISTANCE * MAX_DISTANCE)) {
+	     SquaredPersonalDistance(actor, current) > maxPassingDistance * maxPassingDistance)) {
 		displaymsg->DisplayConstantString(HCStrings::TooFarAway, GUIColors::WHITE);
 		return PyLong_FromLong(ASI_FAILED);
 	}
@@ -10698,6 +10721,7 @@ static PyObject* GemRB_SetupQuickSpell(PyObject* /*self*/, PyObject* args)
 		return RuntimeError("Invalid parameter! Spell not found!\n");
 	}
 
+	assert(slot >= 0);
 	actor->PCStats->QuickSpells[slot] = spelldata.spellName;
 	actor->PCStats->QuickSpellBookType[slot] = static_cast<ieByte>(type);
 
@@ -12687,6 +12711,7 @@ static PyMethodDef GemRBMethods[] = {
 	METHOD(CheckVar, METH_VARARGS),
 	METHOD(ClearActions, METH_VARARGS),
 	METHOD(CloseRighthandStore, METH_NOARGS),
+	METHOD(ConsoleWindowLog, METH_VARARGS),
 	METHOD(CountEffects, METH_VARARGS),
 	METHOD(CountSpells, METH_VARARGS),
 	METHOD(CreateCreature, METH_VARARGS),
@@ -12695,8 +12720,6 @@ static PyMethodDef GemRBMethods[] = {
 	METHOD(CreatePlayer, METH_VARARGS),
 	METHOD(CreateString, METH_VARARGS),
 	METHOD(CreateView, METH_VARARGS),
-	METHOD(RemoveScriptingRef, METH_VARARGS),
-	METHOD(RemoveView, METH_VARARGS),
 	METHOD(DeleteSaveGame, METH_VARARGS),
 	METHOD(DispelEffect, METH_VARARGS),
 	METHOD(DisplayString, METH_VARARGS),
@@ -12715,15 +12738,15 @@ static PyMethodDef GemRBMethods[] = {
 	METHOD(FindStoreItem, METH_VARARGS),
 	METHOD(GameControlGetTargetMode, METH_NOARGS),
 	METHOD(GameControlLocateActor, METH_VARARGS),
-	METHOD(GameControlToggleAlwaysRun, METH_NOARGS),
 	METHOD(GameControlSetScreenFlags, METH_VARARGS),
 	METHOD(GameControlSetTargetMode, METH_VARARGS),
-	METHOD(GameGetReputation, METH_NOARGS),
-	METHOD(GameSetReputation, METH_VARARGS),
+	METHOD(GameControlToggleAlwaysRun, METH_NOARGS),
+	METHOD(GameGetExpansion, METH_NOARGS),
 	METHOD(GameGetFirstSelectedActor, METH_NOARGS),
 	METHOD(GameGetFirstSelectedPC, METH_NOARGS),
 	METHOD(GameGetFormation, METH_VARARGS),
 	METHOD(GameGetPartyGold, METH_NOARGS),
+	METHOD(GameGetReputation, METH_NOARGS),
 	METHOD(GameGetSelectedPCSingle, METH_VARARGS),
 	METHOD(GameIsBeastKnown, METH_VARARGS),
 	METHOD(GameIsPCSelected, METH_VARARGS),
@@ -12731,16 +12754,16 @@ static PyMethodDef GemRBMethods[] = {
 	METHOD(GameSelectPC, METH_VARARGS),
 	METHOD(GameSelectPCSingle, METH_VARARGS),
 	METHOD(GameSetExpansion, METH_VARARGS),
-	METHOD(GameGetExpansion, METH_NOARGS),
 	METHOD(GameSetFormation, METH_VARARGS),
 	METHOD(GameSetPartyGold, METH_VARARGS),
 	METHOD(GameSetPartySize, METH_VARARGS),
 	METHOD(GameSetProtagonistMode, METH_VARARGS),
+	METHOD(GameSetReputation, METH_VARARGS),
 	METHOD(GameSetScreenFlags, METH_VARARGS),
 	METHOD(GameSwapPCs, METH_VARARGS),
+	METHOD(GetAbilityBonus, METH_VARARGS),
 	METHOD(GetAreaInfo, METH_NOARGS),
 	METHOD(GetAvatarsValue, METH_VARARGS),
-	METHOD(GetAbilityBonus, METH_VARARGS),
 	METHOD(GetCombatDetails, METH_VARARGS),
 	METHOD(GetContainer, METH_VARARGS),
 	METHOD(GetContainerItem, METH_VARARGS),
@@ -12749,16 +12772,16 @@ static PyMethodDef GemRBMethods[] = {
 	METHOD(GetEffects, METH_VARARGS),
 	METHOD(GetEquippedAmmunition, METH_VARARGS),
 	METHOD(GetEquippedQuickSlot, METH_VARARGS),
+	METHOD(GetGUIFlags, METH_VARARGS),
 	METHOD(GetGamePreview, METH_VARARGS),
 	METHOD(GetGameString, METH_VARARGS),
 	METHOD(GetGameTime, METH_NOARGS),
 	METHOD(GetGameVar, METH_VARARGS),
-	METHOD(GetGUIFlags, METH_VARARGS),
-	METHOD(GetInventoryInfo, METH_VARARGS),
 	METHOD(GetINIBeastsKey, METH_VARARGS),
 	METHOD(GetINIPartyCount, METH_NOARGS),
 	METHOD(GetINIPartyKey, METH_VARARGS),
 	METHOD(GetINIQuestsKey, METH_VARARGS),
+	METHOD(GetInventoryInfo, METH_VARARGS),
 	METHOD(GetItem, METH_VARARGS),
 	METHOD(GetJournalEntry, METH_VARARGS),
 	METHOD(GetJournalSize, METH_VARARGS),
@@ -12770,39 +12793,38 @@ static PyMethodDef GemRBMethods[] = {
 	METHOD(GetMemorizableSpellsCount, METH_VARARGS),
 	METHOD(GetMemorizedSpell, METH_VARARGS),
 	METHOD(GetMemorizedSpellsCount, METH_VARARGS),
-	METHOD(GetMultiClassPenalty, METH_VARARGS),
-	METHOD(ConsoleWindowLog, METH_VARARGS),
 	METHOD(GetModalState, METH_VARARGS),
-	METHOD(GetPartySize, METH_NOARGS),
+	METHOD(GetMultiClassPenalty, METH_VARARGS),
 	METHOD(GetPCStats, METH_VARARGS),
+	METHOD(GetPartySize, METH_NOARGS),
 	METHOD(GetPlayerActionRow, METH_VARARGS),
-	METHOD(GetPlayerName, METH_VARARGS),
 	METHOD(GetPlayerLevel, METH_VARARGS),
+	METHOD(GetPlayerName, METH_VARARGS),
 	METHOD(GetPlayerPortrait, METH_VARARGS),
-	METHOD(GetPlayerStat, METH_VARARGS),
-	METHOD(GetPlayerStates, METH_VARARGS),
 	METHOD(GetPlayerScript, METH_VARARGS),
 	METHOD(GetPlayerSound, METH_VARARGS),
+	METHOD(GetPlayerStat, METH_VARARGS),
+	METHOD(GetPlayerStates, METH_VARARGS),
 	METHOD(GetPlayerString, METH_VARARGS),
 	METHOD(GetRumour, METH_VARARGS),
 	METHOD(GetSaveGames, METH_VARARGS),
-	METHOD(GetSelectedSize, METH_NOARGS),
 	METHOD(GetSelectedActors, METH_NOARGS),
-	METHOD(GetString, METH_VARARGS),
-	METHOD(GetSpellFailure, METH_VARARGS),
-	METHOD(GetSpellCastOn, METH_VARARGS),
-	METHOD(GetSprite, METH_VARARGS),
+	METHOD(GetSelectedSize, METH_NOARGS),
+	METHOD(GetSlotItem, METH_VARARGS),
 	METHOD(GetSlotType, METH_VARARGS),
-	METHOD(GetStore, METH_VARARGS),
-	METHOD(GetStoreDrink, METH_VARARGS),
-	METHOD(GetStoreCure, METH_VARARGS),
-	METHOD(GetStoreItem, METH_VARARGS),
+	METHOD(GetSlots, METH_VARARGS),
 	METHOD(GetSpell, METH_VARARGS),
+	METHOD(GetSpellCastOn, METH_VARARGS),
+	METHOD(GetSpellFailure, METH_VARARGS),
 	METHOD(GetSpelldata, METH_VARARGS),
 	METHOD(GetSpelldataIndex, METH_VARARGS),
 	METHOD(GetSprite, METH_VARARGS),
-	METHOD(GetSlotItem, METH_VARARGS),
-	METHOD(GetSlots, METH_VARARGS),
+	METHOD(GetSprite, METH_VARARGS),
+	METHOD(GetStore, METH_VARARGS),
+	METHOD(GetStoreCure, METH_VARARGS),
+	METHOD(GetStoreDrink, METH_VARARGS),
+	METHOD(GetStoreItem, METH_VARARGS),
+	METHOD(GetString, METH_VARARGS),
 	METHOD(GetSystemVariable, METH_VARARGS),
 	METHOD(GetToken, METH_VARARGS),
 	METHOD(GetVar, METH_VARARGS),
@@ -12830,21 +12852,23 @@ static PyMethodDef GemRBMethods[] = {
 	METHOD(MemorizeSpell, METH_VARARGS),
 	METHOD(ModifyEffect, METH_VARARGS),
 	METHOD(MoveToArea, METH_VARARGS),
+	METHOD(PlayMovie, METH_VARARGS),
+	METHOD(PlaySound, METH_VARARGS),
+	METHOD(PrepareSpontaneousCast, METH_VARARGS),
 	METHOD(Quit, METH_NOARGS),
 	METHOD(QuitGame, METH_NOARGS),
-	METHOD(PlaySound, METH_VARARGS),
-	METHOD(PlayMovie, METH_VARARGS),
-	METHOD(PrepareSpontaneousCast, METH_VARARGS),
-	METHOD(RemoveItem, METH_VARARGS),
-	METHOD(RemoveSpell, METH_VARARGS),
 	METHOD(RemoveEffects, METH_VARARGS),
+	METHOD(RemoveItem, METH_VARARGS),
+	METHOD(RemoveScriptingRef, METH_VARARGS),
+	METHOD(RemoveSpell, METH_VARARGS),
+	METHOD(RemoveView, METH_VARARGS),
 	METHOD(RestParty, METH_VARARGS),
 	METHOD(RevealArea, METH_VARARGS),
 	METHOD(Roll, METH_VARARGS),
 	METHOD(RunRestScripts, METH_NOARGS),
 	METHOD(SaveCharacter, METH_VARARGS),
-	METHOD(SaveGame, METH_VARARGS),
 	METHOD(SaveConfig, METH_NOARGS),
+	METHOD(SaveGame, METH_VARARGS),
 	METHOD(SetDefaultActions, METH_VARARGS),
 	METHOD(SetEquippedQuickSlot, METH_VARARGS),
 	METHOD(SetFeat, METH_VARARGS),
@@ -12856,11 +12880,11 @@ static PyMethodDef GemRBMethods[] = {
 	METHOD(SetMapAnimation, METH_VARARGS),
 	METHOD(SetMapDoor, METH_VARARGS),
 	METHOD(SetMapExit, METH_VARARGS),
-	METHOD(SetMapnote, METH_VARARGS),
 	METHOD(SetMapRegion, METH_VARARGS),
+	METHOD(SetMapnote, METH_VARARGS),
 	METHOD(SetMasterScript, METH_VARARGS),
-	METHOD(SetMazeEntry, METH_VARARGS),
 	METHOD(SetMazeData, METH_VARARGS),
+	METHOD(SetMazeEntry, METH_VARARGS),
 	METHOD(SetMemorizableSpellsCount, METH_VARARGS),
 	METHOD(SetModalState, METH_VARARGS),
 	METHOD(SetMouseScrollSpeed, METH_VARARGS),
@@ -12868,18 +12892,18 @@ static PyMethodDef GemRBMethods[] = {
 	METHOD(SetPlayerDialog, METH_VARARGS),
 	METHOD(SetPlayerName, METH_VARARGS),
 	METHOD(SetPlayerScript, METH_VARARGS),
+	METHOD(SetPlayerSound, METH_VARARGS),
 	METHOD(SetPlayerStat, METH_VARARGS),
 	METHOD(SetPlayerString, METH_VARARGS),
-	METHOD(SetPlayerSound, METH_VARARGS),
 	METHOD(SetPurchasedAmount, METH_VARARGS),
-	METHOD(SetTimer, METH_VARARGS),
 	METHOD(SetTimedEvent, METH_VARARGS),
+	METHOD(SetTimer, METH_VARARGS),
 	METHOD(SetToken, METH_VARARGS),
+	METHOD(SetVar, METH_VARARGS),
 	METHOD(SetupMaze, METH_VARARGS),
 	METHOD(SetupQuickItemSlot, METH_VARARGS),
 	METHOD(SetupQuickSlot, METH_VARARGS),
 	METHOD(SetupQuickSpell, METH_VARARGS),
-	METHOD(SetVar, METH_VARARGS),
 	METHOD(SoftEndPL, METH_NOARGS),
 	METHOD(SpellCast, METH_VARARGS),
 	METHOD(StealFailed, METH_NOARGS),
@@ -12897,16 +12921,16 @@ static PyMethodDef GemRBMethods[] = {
 static PyMethodDef GemRBInternalMethods[] = {
 	METHOD(Button_EnableBorder, METH_VARARGS),
 	METHOD(Button_SetActionIcon, METH_VARARGS),
-	METHOD(Button_SetBorder, METH_VARARGS),
-	METHOD(Button_SetHotKey, METH_VARARGS),
 	METHOD(Button_SetAnchor, METH_VARARGS),
 	METHOD(Button_SetAnimation, METH_VARARGS),
-	METHOD(Button_SetPushOffset, METH_VARARGS),
+	METHOD(Button_SetBorder, METH_VARARGS),
+	METHOD(Button_SetHotKey, METH_VARARGS),
 	METHOD(Button_SetItemIcon, METH_VARARGS),
 	METHOD(Button_SetOverlay, METH_VARARGS),
 	METHOD(Button_SetPLT, METH_VARARGS),
 	METHOD(Button_SetPicture, METH_VARARGS),
 	METHOD(Button_SetPictureClipping, METH_VARARGS),
+	METHOD(Button_SetPushOffset, METH_VARARGS),
 	METHOD(Button_SetSpellIcon, METH_VARARGS),
 	METHOD(Button_SetSprites, METH_VARARGS),
 	METHOD(Button_SetState, METH_VARARGS),
@@ -12937,19 +12961,19 @@ static PyMethodDef GemRBInternalMethods[] = {
 	METHOD(Table_GetValue, METH_VARARGS),
 	METHOD(TextArea_Append, METH_VARARGS),
 	METHOD(TextArea_ListResources, METH_VARARGS),
-	METHOD(TextArea_SetOptions, METH_VARARGS),
 	METHOD(TextArea_SetChapterText, METH_VARARGS),
+	METHOD(TextArea_SetOptions, METH_VARARGS),
 	METHOD(TextEdit_SetBufferLength, METH_VARARGS),
 	METHOD(View_AddAlias, METH_VARARGS),
 	METHOD(View_AddSubview, METH_VARARGS),
+	METHOD(View_Focus, METH_VARARGS),
 	METHOD(View_GetFrame, METH_VARARGS),
 	METHOD(View_SetBackground, METH_VARARGS),
 	METHOD(View_SetEventProxy, METH_VARARGS),
-	METHOD(View_SetFrame, METH_VARARGS),
 	METHOD(View_SetFlags, METH_VARARGS),
+	METHOD(View_SetFrame, METH_VARARGS),
 	METHOD(View_SetResizeFlags, METH_VARARGS),
 	METHOD(View_SetTooltip, METH_VARARGS),
-	METHOD(View_Focus, METH_VARARGS),
 	METHOD(Window_Focus, METH_VARARGS),
 	METHOD(Window_SetAction, METH_VARARGS),
 	METHOD(Window_SetupEquipmentIcons, METH_VARARGS),

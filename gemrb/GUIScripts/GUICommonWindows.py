@@ -742,3 +742,4 @@ def OpenPSTDeathWindow ():
 	Button.SetText (1403)
 	Button.OnPress (ShowCredits)
 	Window.ShowModal (MODAL_SHADOW_GRAY)
+

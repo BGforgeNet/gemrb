@@ -96,12 +96,12 @@ bool ResourceManager::AddSource(const path_t& path, const std::string& descripti
 	if (flags & RM_REPLACE_SAME_SOURCE) {
 		for (auto& path2 : searchPath) {
 			if (description == path2->GetDescription()) {
-				path2 = source;
+				path2 = std::move(source);
 				break;
 			}
 		}
 	} else {
-		searchPath.push_back(source);
+		searchPath.push_back(std::move(source));
 	}
 	return true;
 }
@@ -141,7 +141,7 @@ bool ResourceManager::Exists(StringView ResRef, SClass_ID type, bool silent) con
 
 bool ResourceManager::Exists(StringView ResRef, const TypeID* type, bool silent) const
 {
-	if (ResRef[0] == '\0')
+	if (ResRef.empty())
 		return false;
 	// TODO: check various caches
 	const std::vector<ResourceDesc>& types = PluginMgr::Get()->GetResourceDesc(type);
