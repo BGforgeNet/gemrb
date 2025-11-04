@@ -27,7 +27,11 @@ import GUICommon
 import GUICommonWindows
 import PortraitWindow
 
+from ie_restype import RES_MOS
 from GUIDefines import *
+
+WinSizes = { GS_SMALLDIALOG : 0, GS_MEDIUMDIALOG : 0, GS_LARGEDIALOG : 0 }
+ContractButton = ExpandButton = None
 
 def OnLoad():
 	# just load the medium window always. we can shrink/expand it, but it is the one with both controls
@@ -87,44 +91,44 @@ def OnLoad():
 
 	UpdateControlStatus(True)
 
-# or if we are going to do this a lot maybe add a view flag for automatically resizing to the assigned background
-# TODO: add a GUIScript function to return a dict with a CObject<Sprite2D> + dimensions for a given resref
-WinSizes = {GS_SMALLDIALOG : 45,
-			GS_MEDIUMDIALOG : 109,
-			GS_LARGEDIALOG : 237}
+tries = 0
+def MWinBG(size, pack = None):
+	global tries, WinSizes
 
-def MWinBG(size, width=None):
-	if width is None:
-		width = GemRB.GetSystemVariable (SV_WIDTH)
+	if pack is None:
+		pack = GUICommon.GetWindowPack ()
 
 	bg = None
-	if size == GS_SMALLDIALOG:
-		if width == 640:
-			bg = "guiwbtp2"
-		else:
-			bg = "guwbtp2"
-	elif size == GS_MEDIUMDIALOG:
-		bg = "guiwdmb"
-	elif size == GS_LARGEDIALOG:
-		if width == 640:
-			bg = "guiwbtp3"
-		else:
-			bg = "guwbtp3"
+	if pack == "GUIW":
+		bgs = { GS_SMALLDIALOG: "guiwbtp2", GS_MEDIUMDIALOG: "guiwdmb", GS_LARGEDIALOG: "guiwbtp3" }
+		bg = bgs[size]
 	else:
-		raise ValueError('Invalid size for MWinBG')
+		bgs = { GS_SMALLDIALOG: "guwbtp2", GS_MEDIUMDIALOG: "guiwdmb", GS_LARGEDIALOG: "guwbtp3" }
+		bg = bgs[size]
 
-	if width >= 800 and width < 1024:
-		bg = bg + "8"
-	elif width >= 1024:
-		bg = bg + "0"
-
-	# FIXME: infinite recursion possible
-	from ie_restype import RES_MOS
-	if not GemRB.HasResource(bg, RES_MOS):
-		if GameCheck.IsBG2OrEE () or GameCheck.IsIWD2():
-			return MWinBG(size, 800)
+		if pack == "GUIW08":
+			bg = bg + "8"
+		elif pack == "GUIW10":
+			bg = bg + "0"
+		elif GameCheck.IsAnyEE (): # "GUIW13" ... "GUIW20"
+			bg = bg + "9" # 1160px wide
 		else:
-			return MWinBG(size, 640)
+			raise ValueError("Unexpected window pack: " + pack)
+
+	if GemRB.HasResource (bg, RES_MOS):
+		tries = 0
+	else:
+		tries += 1
+		if tries > 1:
+			raise RuntimeError("Cannot find message window background for " + pack)
+		if GameCheck.IsBG2OrEE ():
+			return MWinBG(size, "GUIW08")
+		else:
+			return MWinBG(size, "GUIW")
+
+	if WinSizes[size] == 0:
+		WinSizes[size] = GemRB.GetSprite (bg, -1, 0, 0, 1)["h"]
+		SetMWSize (size, GemRB.GetGUIFlags () & ~GS_DIALOGMASK)
 
 	return bg
 
@@ -158,8 +162,29 @@ def ToggleActionbarClock(show):
 	if clock:
 		clock.SetVisible(show)
 
+def SetMWSize(size, GSFlags):
+	if size not in WinSizes:
+		return
+
+	frame = ContractButton.GetFrame()
+	if size != GS_SMALLDIALOG:
+		frame['y'] -= (frame['h'] + 6)
+	ExpandButton.SetFrame (frame)
+
+	MessageWindow = GemRB.GetView ("MSGWIN")
+	frame = MessageWindow.GetFrame()
+	diff = frame['h'] - WinSizes[size]
+	frame['y'] += diff
+	frame['h'] = WinSizes[size]
+	MessageWindow.SetFrame (frame)
+	MessageWindow.SetBackground (MWinBG(size))
+
+	GemRB.GameSetScreenFlags (size + GSFlags, OP_SET)
+
 MTARestoreSize = None
 def UpdateControlStatus(init = False):
+	global ContractButton, ExpandButton
+
 	MessageWindow = GemRB.GetView("MSGWIN")
 
 	if not MessageWindow:
@@ -181,24 +206,6 @@ def UpdateControlStatus(init = False):
 		Expand = GSFlags&GS_DIALOGMASK
 		GSFlags = GSFlags-Expand
 		return (GSFlags, Expand)
-
-	def SetMWSize(size, GSFlags):
-		if size not in WinSizes:
-			return
-		
-		frame = ContractButton.GetFrame()
-		if size != GS_SMALLDIALOG:
-			frame['y'] -= (frame['h'] + 6)
-		ExpandButton.SetFrame(frame)
-
-		frame = MessageWindow.GetFrame()
-		diff = frame['h'] - WinSizes[size]
-		frame['y'] += diff
-		frame['h'] = WinSizes[size]
-		MessageWindow.SetFrame(frame)
-		MessageWindow.SetBackground(MWinBG(size))
-
-		GemRB.GameSetScreenFlags(size + GSFlags, OP_SET)
 
 	def OnIncreaseSize():
 		GSFlags, Expand = GetGSFlags()
